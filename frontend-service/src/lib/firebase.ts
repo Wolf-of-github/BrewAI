@@ -3,13 +3,13 @@ import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDdeXplm3_YKXytDfJuUqQUrd6YzTWQjM8",
-  authDomain: "brewai-490803.firebaseapp.com",
-  projectId: "brewai-490803",
-  storageBucket: "brewai-490803.firebasestorage.app",
-  messagingSenderId: "492446558940",
-  appId: "1:492446558940:web:bdb215b0890eba786b6219",
-  measurementId: "G-GBTSQXLFNK"
+  apiKey: "AIzaSyCTS0kUJDrVbw74xDByZXrkOn27KPo-JH4",
+  authDomain: "brew-prod-1723b.firebaseapp.com",
+  projectId: "brew-prod-1723b",
+  storageBucket: "brew-prod-1723b.firebasestorage.app",
+  messagingSenderId: "191395174205",
+  appId: "1:191395174205:web:d14c6acd22b541eb561754",
+  measurementId: "G-923JGXB7JM"
 }
 
 const app = initializeApp(firebaseConfig)
@@ -21,7 +21,7 @@ export async function signInWithGoogle(): Promise<void> {
   const result = await signInWithPopup(auth, provider)
   const idToken = await result.user.getIdToken()
 
-  const res = await fetch('https://auth-service-qtxt6w75sq-wl.a.run.app/auth/google', {
+  const res = await fetch('https://auth-service-nxyvtmg2na-uc.a.run.app/auth/google', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ idToken }),

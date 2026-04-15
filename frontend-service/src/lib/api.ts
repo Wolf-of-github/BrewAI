@@ -1,4 +1,4 @@
-const API_GATEWAY = 'https://api-gateway-qtxt6w75sq-wl.a.run.app'
+const API_GATEWAY = 'https://api-gateway-nxyvtmg2na-uc.a.run.app'
 
 function getToken(): string | null {
   const match = document.cookie.match(/(?:^|; )brew_token=([^;]*)/)
