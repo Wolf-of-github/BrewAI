@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+/* ── Theme variables ──────────────────────────────────────────────────── */
+
+:root,
+[data-theme="dark"] {
+  --bg-base:       #1E1B18;
+  --bg-primary:    #1F2A44;
+  --bg-secondary:  #14213D;
+  --bg-card:       #1F2A44;
+  --bg-subtle:     #4A6FA5;
+
+  --text-primary:  #E5E7EB;
+  --text-muted:    rgba(229, 231, 235, 0.60);
+  --text-faint:    rgba(229, 231, 235, 0.30);
+  --text-xfaint:   rgba(229, 231, 235, 0.20);
+
+  --accent:        #F59E0B;
+  --accent-hover:  rgba(245, 158, 11, 0.80);
+  --accent-subtle: rgba(245, 158, 11, 0.10);
+  --accent-border: rgba(245, 158, 11, 0.30);
+  --accent-text:   #1F2A44;
+
+  --blue:          #4A6FA5;
+  --blue-subtle:   rgba(74, 111, 165, 0.10);
+  --blue-border:   rgba(74, 111, 165, 0.30);
+  --blue-muted:    rgba(74, 111, 165, 0.20);
+
+  --border:        rgba(74, 111, 165, 0.20);
+  --border-strong: rgba(74, 111, 165, 0.50);
+
+  --navbar-bg:     rgba(31, 42, 68, 0.90);
+
+  --shadow-accent: rgba(245, 158, 11, 0.10);
+  --shadow-blue:   rgba(74, 111, 165, 0.40);
+}
+
+[data-theme="light"] {
+  --bg-base:       #F1F5FB;
+  --bg-primary:    #FFFFFF;
+  --bg-secondary:  #EEF2FA;
+  --bg-card:       #FFFFFF;
+  --bg-subtle:     #2563EB;
+
+  --text-primary:  #0F172A;
+  --text-muted:    rgba(15, 23, 42, 0.60);
+  --text-faint:    rgba(15, 23, 42, 0.40);
+  --text-xfaint:   rgba(15, 23, 42, 0.25);
+
+  --accent:        #F59E0B;
+  --accent-hover:  rgba(245, 158, 11, 0.85);
+  --accent-subtle: rgba(245, 158, 11, 0.08);
+  --accent-border: rgba(245, 158, 11, 0.35);
+  --accent-text:   #FFFFFF;
+
+  --blue:          #2563EB;
+  --blue-subtle:   rgba(37, 99, 235, 0.08);
+  --blue-border:   rgba(37, 99, 235, 0.25);
+  --blue-muted:    rgba(37, 99, 235, 0.15);
+
+  --border:        rgba(37, 99, 235, 0.15);
+  --border-strong: rgba(37, 99, 235, 0.40);
+
+  --navbar-bg:     rgba(255, 255, 255, 0.92);
+
+  --shadow-accent: rgba(245, 158, 11, 0.15);
+  --shadow-blue:   rgba(37, 99, 235, 0.20);
+}
+
+/* ── Helpers ──────────────────────────────────────────────────────────── */
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.prose-list ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+}

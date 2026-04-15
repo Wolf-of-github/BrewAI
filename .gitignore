@@ -1,0 +1,18 @@
+data
+commands.txt
+help.txt
+
+# Terraform — never commit secrets or local state
+infra/terraform.tfvars
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/.terraform.lock.hcl
+
+# Dependency directories
+node_modules/
+
+# Python virtual environments
+.venv/
+venv/
+.DS_Store

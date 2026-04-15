@@ -1,0 +1,90 @@
+{
+  "personal_details": {
+    "name": "Ishaan Apte",
+    "location": "Los Angeles, CA",
+    "phone": "(213) 574-8506",
+    "email": "iapte@usc.edu",
+    "linkedin": "https://www.linkedin.com/in/ishaan-apte-839619212/"
+  },
+  "professional_summary": "Backend Software Engineer with practical experience in backend systems development, cloud-native architectures, and AI-enabled applications. Proficient in Python and Java, with expertise in relational databases (PostgreSQL), AWS cloud infrastructure, CI/CD, and REST API development. Committed to delivering practical, scalable, and reliable solutions that drive value by enhancing complex reimbursement workflows within an AI-driven platform.",
+  "skills": "Backend Development: Python | Java | Frappe Framework | JavaScript | Shell | Databases: SQL | Aurora/pgvector | Cloud Infrastructure: AWS | Docker | Kubernetes | Terraform | EC2 | S3 | VPC | Route 53 | NGINX | IAM | SES | DevOps & CI/CD: GitHub Actions | GitLab CI/CD | Jenkins | Argo CD | Git | GitHub | Gitlab | API Development: REST API Development | Web Technologies: REACT | Node JS | AI/ML: Amazon Bedrock-based RAG | Build Tools: Gradle",
+  "education": [
+    {
+      "institution": "University of Southern California, Viterbi School of Engineering",
+      "degree": "Master of Science in Computer Science",
+      "duration": "August 2024 – May 2026",
+      "coursework": "Distributed Systems, Databases, Applied Cryptography, Analysis of Algorithms, Deep Learning, Applied Natural Language Processing, Information Retrieval and Web Search Engines"
+    },
+    {
+      "institution": "Vidyalankar Institute of Technology, Mumbai University",
+      "degree": "Bachelor of Engineering in Computer Engineering",
+      "duration": "August 2020 – May 2024",
+      "coursework": "Cloud Computing, Computer Networks, Operating Systems, Java, Python, Database Management Systems, Software Development Lifecycle Management, Artificial Intelligence, Machine Learning, Big Data Analytics"
+    }
+  ],
+  "experience": [
+    {
+      "company": "Credence Analytics Pvt. Ltd",
+      "role": "Software Developer Intern",
+      "location": "Mumbai",
+      "duration": "January 2023 – August 2023",
+      "stack": "Python, JavaScript, SQL, Frappe Framework, MariaDB, GitLab CI/CD",
+      "bullets": [
+        "Developed and implemented scalable backend services using Python (Frappe Framework) and MariaDB, enhancing data handling efficiency across critical ERP modules.",
+        "Engineered and optimized RESTful APIs and complex SQL queries, significantly reducing response latency and improving overall system reliability.",
+        "Delivered user-centric ERP features for attrition, skills management, timesheets, and social updates, directly increasing platform usability and operational efficiency.",
+        "Implemented and maintained robust CI/CD pipelines using GitLab to automate testing, building, and deployments, ensuring consistent and faster software releases.",
+        "Collaborated effectively within Agile development teams, leveraging code reviews and version control to deliver high-quality, maintainable software solutions."
+      ]
+    }
+  ],
+  "academic_projects": [
+    {
+      "name": "Healthcare Microservices Platform",
+      "stack": "Java (Spring Boot, Spring Cloud), MongoDB, Kafka, Docker, Kubernetes, OAuth2, JWT, REST APIs, Jenkins",
+      "bullets": [
+        "Architected and developed a cloud-native healthcare management platform using Spring Boot microservices, enabling scalable patient, appointment, and billing services.",
+        "Implemented secure inter-service communication via Kafka-based event streaming and REST APIs, fortified with OAuth2 and JWT authentication for sensitive data access.",
+        "Containerized all services using Docker and orchestrated deployments with Kubernetes, ensuring high availability and efficient resource utilization.",
+        "Managed patient and medical data in MongoDB, designing schemas to support structured and unstructured healthcare records, and integrated with Jenkins for CI/CD."
+      ]
+    },
+    {
+      "name": "Secure Decentralized Electronic Health Record Audit System",
+      "stack": "Python (Flask), AES-GCM, RSA, SHA-256, JWT, React.js, Append-only JSON Chain",
+      "bullets": [
+        "Engineered a cryptographically secure, decentralized audit system for EHRs using Python (Flask), enhancing patient data privacy and audit integrity.",
+        "Implemented robust security protocols with AES-GCM and RSA encryption, SHA-256 hashing, and JWT authentication for tamper-evident logging and secure access control.",
+        "Designed a multi-node, peer-discovery architecture for a verifiable, append-only ledger, enabling transparent tracking and verification of medical data access.",
+        "Developed RESTful APIs for patients and auditors to securely view and manage access logs, ensuring data immutability and compliance."
+      ]
+    },
+    {
+      "name": "Cloud-Native E-Commerce DevOps Pipeline",
+      "stack": "Kubernetes, Terraform, AWS EKS, Java, GitHub Actions, Argo CD, VPC, ALB, Route 53, SSL/TLS",
+      "bullets": [
+        "Deployed a containerized Java microservices e-commerce platform on Kubernetes, establishing automated infrastructure provisioning using Terraform.",
+        "Provisioned production-grade AWS EKS clusters within custom VPC configurations and Application Load Balancers, optimizing microservices communication and security.",
+        "Built end-to-end CI/CD automation with GitHub Actions and implemented GitOps using Argo CD for single-touch, reliable deployments.",
+        "Secured external access by integrating Route 53 DNS management and automating SSL/TLS certificate issuance, ensuring robust network security."
+      ]
+    },
+    {
+      "name": "AppraisePro (Faculty Performance Appraisal Web Application)",
+      "stack": "Python (Frappe Framework), JavaScript, MariaDB/PostgreSQL, Redis",
+      "bullets": [
+        "Developed a Python-based (Frappe Framework) web application for faculty performance appraisals, streamlining KPI-based evaluation and workflow management.",
+        "Designed and implemented core backend modules for data collection, automated scoring, and reviewer workflows, leveraging MariaDB/PostgreSQL for robust data storage.",
+        "Integrated Redis caching and background job processing to optimize application performance and handle asynchronous tasks efficiently.",
+        "Created role-based access control and analytics dashboards, enabling secure data access and providing institutional insights into faculty performance."
+      ]
+    }
+  ],
+  "certifications": [
+    "AWS Certified Machine Learning Engineer Associate - ML solution design and deployment on AWS",
+    "AWS Certified Solutions Architect Associate (Expected February 2026) - Secure, scalable cloud architecture design"
+  ],
+  "leadership": [
+    "Led a cross-functional development team through code reviews, task delegation, and Agile practices for the Ledge student onboarding platform."
+  ]
+}
