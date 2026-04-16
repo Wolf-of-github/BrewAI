@@ -1,4 +1,13 @@
-const API_GATEWAY = 'https://api-gateway-nxyvtmg2na-uc.a.run.app'
+const API_GATEWAY =
+  import.meta.env.VITE_API_GATEWAY_URL ?? 'https://api-gateway-service-nxyvtmg2na-uc.a.run.app'
+
+async function getErrorMessage(res: Response): Promise<string> {
+  const body = await res.json().catch(() => null)
+  if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') {
+    return body.error
+  }
+  return `HTTP ${res.status}`
+}
 
 function getToken(): string | null {
   const match = document.cookie.match(/(?:^|; )brew_token=([^;]*)/)
@@ -27,8 +36,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     },
   })
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error ?? `HTTP ${res.status}`)
+    throw new Error(await getErrorMessage(res))
   }
   return res.json()
 }
@@ -130,8 +138,7 @@ export async function uploadResume(file: File): Promise<{ fileId: string; gcsUrl
     body: form,
   })
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error(body.error ?? `HTTP ${res.status}`)
+    throw new Error(await getErrorMessage(res))
   }
   return res.json()
 }

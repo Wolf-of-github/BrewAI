@@ -2,6 +2,9 @@ import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
+const AUTH_SERVICE_URL =
+  import.meta.env.VITE_AUTH_SERVICE_URL ?? 'https://auth-service-nxyvtmg2na-uc.a.run.app'
+
 const firebaseConfig = {
   apiKey: "AIzaSyCTS0kUJDrVbw74xDByZXrkOn27KPo-JH4",
   authDomain: "brew-prod-1723b.firebaseapp.com",
@@ -17,17 +20,28 @@ export const auth = getAuth(app)
 export const db = getFirestore(app)
 const provider = new GoogleAuthProvider()
 
+async function getErrorMessage(res: Response, fallback: string): Promise<string> {
+  const body = await res.json().catch(() => null)
+  if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') {
+    return body.error
+  }
+  return fallback
+}
+
 export async function signInWithGoogle(): Promise<void> {
   const result = await signInWithPopup(auth, provider)
   const idToken = await result.user.getIdToken()
 
-  const res = await fetch('https://auth-service-nxyvtmg2na-uc.a.run.app/auth/google', {
+  const res = await fetch(`${AUTH_SERVICE_URL}/auth/google`, {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ idToken }),
   })
 
-  if (!res.ok) throw new Error('Auth service error')
+  if (!res.ok) {
+    throw new Error(await getErrorMessage(res, 'Auth service error'))
+  }
 
   const { token } = await res.json()
 
