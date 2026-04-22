@@ -63,11 +63,18 @@ export async function updateTailoredJob(jobId: string, update: { company?: strin
   })
 }
 
-export async function getTailoredContent(jobId: string): Promise<Record<string, unknown>> {
-  return apiFetch(`/resume/tailored/${jobId}/content`)
+export async function getTailoredContent(draftId: string): Promise<string> {
+  const token = getToken()
+  const res = await fetch(`${API_GATEWAY}/resume/tailored/${draftId}/content`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) {
+    throw new Error(await getErrorMessage(res))
+  }
+  return res.text()
 }
 
-export async function tailorResume(jdText: string, userInstructions: string = ""): Promise<{ ack: boolean; job_id: string; company: string; role: string }> {
+export async function tailorResume(jdText: string, userInstructions: string = ""): Promise<{ draft_id: string; company: string; role: string }> {
   return apiFetch('/resume/tailor', {
     method: 'POST',
     body: JSON.stringify({ jd_text: jdText, user_instructions: userInstructions }),
@@ -80,6 +87,10 @@ export async function deleteResume(): Promise<{ ack: boolean }> {
 
 export async function getGithubOAuthUrl(): Promise<{ url: string }> {
   return apiFetch('/github/oauth/url')
+}
+
+export async function disconnectGithub(): Promise<{ ack: boolean }> {
+  return apiFetch('/github/disconnect', { method: 'DELETE' })
 }
 
 export async function handleGithubCallback(code: string): Promise<{ ack: boolean; github_id: string }> {

@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getGithubOAuthUrl, handleGithubCallback, updateTailoredJob, getUserId, getBillingStatus, recordDownload } from '../lib/api'
+import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getGithubOAuthUrl, handleGithubCallback, disconnectGithub as apiDisconnectGithub, updateTailoredJob, getBillingStatus, recordDownload } from '../lib/api'
 import { db } from '../lib/firebase'
-import { doc, onSnapshot } from 'firebase/firestore'
-import ResumeRenderer, { type ResumeData, generatePDF } from './ResumeRenderer'
+import { collection, onSnapshot } from 'firebase/firestore'
 import {
   Github,
   FileText,
@@ -208,8 +207,8 @@ function ResumePanel() {
 // GitHub Connect Panel
 function GitHubPanel() {
   const [saved, setSaved] = useState<string | null>(null)
-  const [editing, setEditing] = useState(false)
   const [loadingCallback, setLoadingCallback] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   useEffect(() => {
     apiGetGithubStatus().then(({ github_id }: { github_id: string | null }) => {
@@ -253,7 +252,7 @@ function GitHubPanel() {
           <Github className="w-4 h-4 shrink-0 animate-pulse" style={{ color: 'var(--text-muted)' }} />
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Connecting…</p>
         </div>
-      ) : saved && !editing ? (
+      ) : saved ? (
         <div
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl border"
           style={{ borderColor: 'var(--blue-border)', background: 'var(--blue-subtle)' }}
@@ -265,13 +264,24 @@ function GitHubPanel() {
           </div>
           <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />
           <button
-            onClick={() => setEditing(true)}
+            disabled={disconnecting}
+            onClick={async () => {
+              setDisconnecting(true)
+              try {
+                await apiDisconnectGithub()
+                setSaved(null)
+              } catch (err) {
+                console.error('[GitHubPanel] disconnect failed:', err)
+              } finally {
+                setDisconnecting(false)
+              }
+            }}
             className="text-[10px] transition-colors"
             style={{ color: 'var(--text-faint)' }}
             onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--accent)'}
             onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
           >
-            Edit
+            {disconnecting ? 'Disconnecting…' : 'Disconnect'}
           </button>
         </div>
       ) : (
@@ -490,18 +500,18 @@ function BrewCountdown() {
 
 // Resume viewer panel
 function ResumeViewer({ jd }: { jd: JDEntry | null }) {
-  const [data, setData] = useState<ResumeData | null>(null)
+  const [html, setHtml] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!jd) return
-    if (jd.status === 'processing') { setData(null); setError(null); return }
+    if (jd.status === 'processing') { setHtml(null); setError(null); return }
     setLoading(true)
-    setData(null)
+    setHtml(null)
     setError(null)
     getTailoredContent(jd.id)
-      .then((res) => setData(res as ResumeData))
+      .then((res) => setHtml(res))
       .catch((err) => setError(err.message ?? 'Failed to load'))
       .finally(() => setLoading(false))
   }, [jd?.id, jd?.status])
@@ -536,11 +546,12 @@ function ResumeViewer({ jd }: { jd: JDEntry | null }) {
         </div>
         <button
           onClick={() => {
-            if (!data) return
-            generatePDF(data, `${jd.company}-resume.pdf`)
+            if (!html) return
+            const win = window.open('', '_blank')
+            if (win) { win.document.write(html); win.document.close(); win.print() }
             recordDownload().catch(() => {})
           }}
-          disabled={!data}
+          disabled={!html}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
         >
@@ -568,7 +579,7 @@ function ResumeViewer({ jd }: { jd: JDEntry | null }) {
             <BrewCountdown />
           </div>
         )}
-        {data && <ResumeRenderer data={data} />}
+        {html && <div dangerouslySetInnerHTML={{ __html: html }} className="w-full h-full" />}
       </div>
     </div>
   )
@@ -586,9 +597,9 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
     const jdText = text.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim()
     setSubmitting(true)
     try {
-      const { job_id, company, role } = await apiTailorResume(jdText, instructions.trim())
+      const { draft_id, company, role } = await apiTailorResume(jdText, instructions.trim())
       onSubmit({
-        id: job_id,
+        id: draft_id,
         company,
         role,
         pastedAt: 'Just now',
@@ -917,40 +928,23 @@ export default function Dashboard({
     setJdHistory((prev) => [entry, ...prev])
     setActiveJD(entry)
 
-    const userId = getUserId()
-    if (!userId) {
-      console.warn('[addJD] no userId found in token')
-      return
-    }
+    console.log(`[addJD] opening snapshot listener for draftId=${entry.id}`)
 
-    console.log(`[addJD] opening snapshot listener for jobId=${entry.id} userId=${userId}`)
-
-    const ref = doc(db, 'tailored_resumes', userId, 'tailors', entry.id)
-    const unsubscribe = onSnapshot(ref,
+    const jobsRef = collection(db, 'generative-ai-service-jobs', entry.id, 'jobs')
+    const unsubscribe = onSnapshot(jobsRef,
       (snap) => {
-        console.log(`[onSnapshot] fired for jobId=${entry.id} exists=${snap.exists()}`, snap.data())
-        if (!snap.exists()) return
-        const data = snap.data()
-        if (data.status !== 'done') {
-          console.log(`[onSnapshot] status=${data.status} — waiting`)
-          return
-        }
+        const completedDoc = snap.docs.find((d) => d.data().status === 'completed')
+        if (!completedDoc) return
 
-        console.log(`[onSnapshot] status=done — updating UI company="${data.company}" role="${data.role}"`)
-        const updated: Partial<JDEntry> = {
-          status: 'done',
-          gcs_url: data.gcs_url ?? '',
-          ...(data.company ? { company: data.company } : {}),
-          ...(data.role ? { role: data.role } : {}),
-        }
+        console.log(`[onSnapshot] job completed for draftId=${entry.id}`)
+        const updated: Partial<JDEntry> = { status: 'done', gcs_url: '' }
 
         setJdHistory((prev) => prev.map((e) => e.id === entry.id ? { ...e, ...updated } : e))
         setActiveJD((prev) => prev?.id === entry.id ? { ...prev, ...updated } : prev)
         unsubscribe()
-        console.log(`[onSnapshot] unsubscribed for jobId=${entry.id}`)
       },
       (err) => {
-        console.error(`[onSnapshot] error for jobId=${entry.id}:`, err)
+        console.error(`[onSnapshot] error for draftId=${entry.id}:`, err)
       }
     )
   }
