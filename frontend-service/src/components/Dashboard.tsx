@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getGithubOAuthUrl, handleGithubCallback, disconnectGithub as apiDisconnectGithub, updateTailoredJob, getBillingStatus, recordDownload } from '../lib/api'
-import { db } from '../lib/firebase'
-import { collection, onSnapshot } from 'firebase/firestore'
+import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getGithubOAuthUrl, handleGithubCallback, disconnectGithub as apiDisconnectGithub, updateTailoredJob, recordDownload, getFirebaseToken } from '../lib/api'
+import { db, signInToFirestore } from '../lib/firebase'
+import { doc, onSnapshot } from 'firebase/firestore'
 import {
   Github,
   FileText,
@@ -17,6 +17,9 @@ import {
   LogOut,
   Sun,
   Moon,
+  ChevronRight,
+  ChevronLeft,
+  Send,
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 
@@ -34,9 +37,11 @@ interface JDEntry {
   id: string
   company: string
   role: string
+  jd: string
   pastedAt: string
-  status: 'pending' | 'processing' | 'done'
+  status: 'pending' | 'processing' | 'done' | 'failed'
   gcs_url: string
+  instructions: string[]
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
@@ -338,6 +343,8 @@ function JDHistoryItem({
       <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
     ) : entry.status === 'processing' ? (
       <Sparkles className="w-3.5 h-3.5 shrink-0 animate-pulse" style={{ color: 'var(--accent)' }} />
+    ) : entry.status === 'failed' ? (
+      <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />
     ) : (
       <AlertCircle className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--text-faint)' }} />
     )
@@ -507,13 +514,30 @@ function ResumeViewer({ jd }: { jd: JDEntry | null }) {
   useEffect(() => {
     if (!jd) return
     if (jd.status === 'processing') { setHtml(null); setError(null); return }
+    if (jd.status === 'failed') { setHtml(null); setError(null); return }
+    let cancelled = false
     setLoading(true)
     setHtml(null)
     setError(null)
-    getTailoredContent(jd.id)
-      .then((res) => setHtml(res))
-      .catch((err) => setError(err.message ?? 'Failed to load'))
-      .finally(() => setLoading(false))
+
+    async function fetchWithRetry(attempts: number) {
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const res = await getTailoredContent(jd!.id)
+          if (!cancelled) { setHtml(res); setLoading(false) }
+          return
+        } catch (err) {
+          if (i < attempts - 1) {
+            await new Promise((r) => setTimeout(r, 2000 * (i + 1)))
+          } else {
+            if (!cancelled) { setError((err as Error).message ?? 'Failed to load'); setLoading(false) }
+          }
+        }
+      }
+    }
+
+    fetchWithRetry(3)
+    return () => { cancelled = true }
   }, [jd?.id, jd?.status])
 
   if (!jd) {
@@ -547,8 +571,10 @@ function ResumeViewer({ jd }: { jd: JDEntry | null }) {
         <button
           onClick={() => {
             if (!html) return
-            const win = window.open('', '_blank')
-            if (win) { win.document.write(html); win.document.close(); win.print() }
+            const blob = new Blob([html], { type: 'text/html' })
+            const url = URL.createObjectURL(blob)
+            const win = window.open(url, '_blank')
+            if (win) win.addEventListener('load', () => { win.print(); URL.revokeObjectURL(url) })
             recordDownload().catch(() => {})
           }}
           disabled={!html}
@@ -602,9 +628,11 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
         id: draft_id,
         company,
         role,
+        jd: jdText,
         pastedAt: 'Just now',
         status: 'processing',
         gcs_url: '',
+        instructions: [],
       })
       setText('')
       setInstructions('')
@@ -700,77 +728,17 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
   )
 }
 
-// Upgrade modal
-function UpgradeModal({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div
-        className="relative w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4"
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 transition-colors"
-          style={{ color: 'var(--text-faint)' }}
-          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
-        >
-          <X className="w-4 h-4" />
-        </button>
-
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-subtle)' }}>
-            <Sparkles className="w-5 h-5" style={{ color: 'var(--accent)' }} />
-          </div>
-          <div>
-            <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Upgrade to Pro</p>
-            <p className="text-xs" style={{ color: 'var(--text-faint)' }}>You've used your 3 free tailors today</p>
-          </div>
-        </div>
-
-        <div className="rounded-xl p-4 flex flex-col gap-2" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-          <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>$20 <span className="text-sm font-normal" style={{ color: 'var(--text-faint)' }}>/month</span></p>
-          <ul className="text-xs flex flex-col gap-1.5 mt-1" style={{ color: 'var(--text-subtle)' }}>
-            {['Unlimited resume tailoring', 'Priority AI processing', 'Cancel anytime'].map((f) => (
-              <li key={f} className="flex items-center gap-2">
-                <CheckCircle className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <button
-          onClick={onUpgrade}
-          className="w-full py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-          style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
-        >
-          <Sparkles className="w-4 h-4" />
-          Upgrade now
-        </button>
-        <p className="text-center text-[10px]" style={{ color: 'var(--text-faint)' }}>
-          Resets daily at midnight — free tailors come back tomorrow.
-        </p>
-      </div>
-    </div>
-  )
-}
-
 // Dashboard Navbar
 function DashboardNavbar({
   user,
-  plan,
   onSignOut,
   onProfile,
   onHome,
-  onUpgrade,
 }: {
   user: { email: string; picture: string }
-  plan: 'free' | 'pro' | 'beta'
   onSignOut: () => void
   onProfile: () => void
   onHome: () => void
-  onUpgrade: () => void
 }) {
   const { theme, toggleTheme } = useTheme()
 
@@ -801,32 +769,6 @@ function DashboardNavbar({
           </span>
         </button>
         <div className="flex items-center gap-3">
-          {/* Plan badge */}
-          {plan === 'pro' ? (
-            <button
-              onClick={onUpgrade}
-              className="text-[10px] font-semibold px-2.5 py-1 rounded-full border transition-opacity hover:opacity-80"
-              style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderColor: 'rgba(245,158,11,0.3)' }}
-            >
-              Pro
-            </button>
-          ) : plan === 'beta' ? (
-            <span
-              className="text-[10px] font-semibold px-2.5 py-1 rounded-full border"
-              style={{ color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', borderColor: 'rgba(139,92,246,0.3)' }}
-            >
-              Beta
-            </span>
-          ) : (
-            <button
-              onClick={onUpgrade}
-              className="text-[10px] font-semibold px-2.5 py-1 rounded-full border transition-opacity hover:opacity-80"
-              style={{ color: 'var(--text-faint)', background: 'var(--blue-subtle)', borderColor: 'var(--border)' }}
-            >
-              Free → Upgrade
-            </button>
-          )}
-
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
@@ -872,6 +814,143 @@ function DashboardNavbar({
   )
 }
 
+// ─── Tweak Panel ──────────────────────────────────────────────────────────────
+
+function TweakPanel({
+  jd,
+  onTweak,
+  collapsed,
+  onToggleCollapse,
+}: {
+  jd: JDEntry | null
+  onTweak: (draftId: string, instruction: string) => void
+  collapsed: boolean
+  onToggleCollapse: () => void
+}) {
+  const [instruction, setInstruction] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  async function submit() {
+    if (!instruction.trim() || submitting || !jd || jd.status === 'processing') return
+    const text = instruction.trim()
+    setSubmitting(true)
+    try {
+      await onTweak(jd.id, text)
+      setInstruction('')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const isDisabled = !jd || jd.status === 'processing' || submitting
+
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center py-1 gap-2">
+        <button
+          onClick={onToggleCollapse}
+          title="Open tweak panel"
+          className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+          style={{ background: 'var(--bg-card)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}
+          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--accent)'}
+          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
+        >
+          <Sparkles className="w-4 h-4" />
+        </button>
+        <span className="text-[9px] font-medium" style={{ color: 'var(--text-xfaint)', writingMode: 'vertical-rl', textOrientation: 'mixed' }}>Tweak</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-72 shrink-0 sticky top-20 self-start max-h-[calc(100vh-5rem)] flex flex-col">
+      <div
+        className="rounded-2xl border p-5 flex flex-col gap-4 overflow-y-auto max-h-[calc(100vh-5rem)]"
+        style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between shrink-0">
+          <SectionLabel>Tweak Resume</SectionLabel>
+          <button
+            onClick={onToggleCollapse}
+            title="Close tweak panel"
+            className="w-6 h-6 flex items-center justify-center rounded-md transition-colors"
+            style={{ color: 'var(--text-faint)' }}
+            onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+            onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Job info */}
+        {jd && (
+          <div className="flex flex-col gap-1 shrink-0">
+            <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{jd.company}</p>
+            <p className="text-xs truncate" style={{ color: 'var(--text-faint)' }}>{jd.role}</p>
+            {jd.jd && (
+              <p className="text-[11px] mt-1 leading-relaxed overflow-hidden" style={{ color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>
+                {jd.jd}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Instructions history */}
+        {jd?.instructions && jd.instructions.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest shrink-0" style={{ color: 'var(--text-xfaint)' }}>Past instructions</p>
+            {jd.instructions.map((instr, i) => (
+              <div
+                key={i}
+                className="px-2.5 py-1.5 rounded-lg text-xs"
+                style={{ background: 'var(--blue-subtle)', color: 'var(--text-muted)' }}
+              >
+                {instr}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Input */}
+        <div className="flex flex-col gap-2 shrink-0">
+          {jd?.status === 'processing' && (
+            <p className="text-xs text-center" style={{ color: 'var(--accent)' }}>
+              <Sparkles className="w-3 h-3 inline mr-1 animate-pulse" />
+              Brewing…
+            </p>
+          )}
+          <textarea
+            ref={textareaRef}
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
+            placeholder={jd?.status === 'done' ? 'Add an instruction…' : 'Select a completed draft to tweak'}
+            rows={3}
+            disabled={isDisabled}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none resize-none disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{
+              background: 'var(--bg-secondary)',
+              borderColor: 'var(--accent-border)',
+              color: 'var(--text-primary)',
+            }}
+          />
+          <button
+            onClick={submit}
+            disabled={isDisabled || !instruction.trim()}
+            className="w-full py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+          >
+            <Send className="w-3.5 h-3.5" />
+            {submitting ? 'Sending…' : 'Brew tweak'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
 
 export default function Dashboard({
@@ -886,23 +965,50 @@ export default function Dashboard({
   onHome?: () => void
 }) {
   const [jdHistory, setJdHistory] = useState<JDEntry[]>([])
-  const [activeJD, setActiveJD] = useState<JDEntry | null>(null)
-  const [plan, setPlan] = useState<'free' | 'pro' | 'beta'>('free')
-  const [showUpgrade, setShowUpgrade] = useState(false)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [tweakCollapsed, setTweakCollapsed] = useState(true)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
-  useEffect(() => {
-    getBillingStatus().then((s) => setPlan(s.plan)).catch(() => {})
-  }, [])
+  // Derive activeJD from jdHistory — snapshot updates flow through automatically, no stale closures
+  const activeJD = jdHistory.find((e) => e.id === activeId) ?? null
 
-  // Stripe not yet integrated — upgrade/portal disabled
-  async function handleUpgradeClick() {
-    setShowUpgrade(true)
-  }
+  function openTweak() { setTweakCollapsed(false) }
+  function closeTweak() { setTweakCollapsed(true) }
 
   // async function handleCheckout() {
   //   const { url } = await createCheckoutSession()
   //   window.location.href = url
   // }
+
+  function openSnapshot(draftId: string) {
+    console.log(`[onSnapshot] started draftId=${draftId}`)
+    const draftRef = doc(db, 'drafts', draftId)
+    const unsubscribe = onSnapshot(
+      draftRef,
+      (snap) => {
+        if (!snap.exists()) return
+        const data = snap.data()!
+        if (data.status === 'completed') {
+          console.log(`[onSnapshot] completed draftId=${draftId}`)
+          setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
+            ...e,
+            status: 'done',
+            gcs_url: '',
+            ...(data.company ? { company: data.company } : {}),
+            ...(data.role ? { role: data.role } : {}),
+          } : e))
+          console.log(`[onSnapshot] unsubscribed draftId=${draftId}`)
+          unsubscribe()
+        } else if (data.status === 'failed') {
+          console.log(`[onSnapshot] failed draftId=${draftId}`)
+          setJdHistory((prev) => prev.map((e) => e.id === draftId ? { ...e, status: 'failed' } : e))
+          console.log(`[onSnapshot] unsubscribed draftId=${draftId}`)
+          unsubscribe()
+        }
+      },
+      (err) => console.error(`[onSnapshot] error draftId=${draftId}:`, err)
+    )
+  }
 
   function fetchHistory() {
     return apiListTailored().then(({ jobs }) => {
@@ -913,95 +1019,129 @@ export default function Dashboard({
           id: j.job_id,
           company: j.company ?? 'Company Name',
           role: j.role ?? 'Job Role',
+          jd: j.jd ?? '',
           pastedAt: new Date(j.timestamp).toLocaleDateString(),
-          status: (j.status as JDEntry['status']) ?? 'done',
+          status: (['done', 'processing', 'failed', 'pending'].includes(j.status) ? j.status : 'done') as JDEntry['status'],
           gcs_url: j.gcs_url,
+          instructions: (j as any).instructions ?? [],
         }))
       setJdHistory(entries)
-      setActiveJD((prev) => prev ?? (entries[0] ?? null))
+      entries.filter((e) => e.status === 'processing').forEach((e) => openSnapshot(e.id))
+      setActiveId((prev) => prev ?? (entries[0]?.id ?? null))
     }).catch(() => {})
   }
 
-  useEffect(() => { fetchHistory() }, [])
+  useEffect(() => {
+    // Sign into Firebase with a custom token so onSnapshot has proper auth,
+    // then load history (which opens snapshot listeners for processing jobs)
+    getFirebaseToken()
+      .then(({ token }) => signInToFirestore(token))
+      .then(() => fetchHistory())
+      .catch((err) => console.error('[firebase-auth] sign-in failed:', err))
+  }, [])
 
   function addJD(entry: JDEntry) {
     setJdHistory((prev) => [entry, ...prev])
-    setActiveJD(entry)
-
-    console.log(`[addJD] opening snapshot listener for draftId=${entry.id}`)
-
-    const jobsRef = collection(db, 'generative-ai-service-jobs', entry.id, 'jobs')
-    const unsubscribe = onSnapshot(jobsRef,
-      (snap) => {
-        const completedDoc = snap.docs.find((d) => d.data().status === 'completed')
-        if (!completedDoc) return
-
-        console.log(`[onSnapshot] job completed for draftId=${entry.id}`)
-        const updated: Partial<JDEntry> = { status: 'done', gcs_url: '' }
-
-        setJdHistory((prev) => prev.map((e) => e.id === entry.id ? { ...e, ...updated } : e))
-        setActiveJD((prev) => prev?.id === entry.id ? { ...prev, ...updated } : prev)
-        unsubscribe()
-      },
-      (err) => {
-        console.error(`[onSnapshot] error for draftId=${entry.id}:`, err)
-      }
-    )
+    setActiveId(entry.id)
+    openSnapshot(entry.id)
   }
 
   const handleUpdate = useCallback((id: string, company: string, role: string) => {
     setJdHistory((prev) => prev.map((e) => e.id === id ? { ...e, company, role } : e))
-    setActiveJD((prev) => prev?.id === id ? { ...prev, company, role } : prev)
   }, [])
+
+  async function handleTweak(draftId: string, instruction: string) {
+    await apiTailorResume('', instruction, draftId)
+    setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
+      ...e,
+      status: 'processing',
+      instructions: [...e.instructions, instruction],
+    } : e))
+    openSnapshot(draftId)
+  }
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
-      {showUpgrade && (
-        <UpgradeModal onClose={() => setShowUpgrade(false)} onUpgrade={() => setShowUpgrade(false)} />
-      )}
-      <DashboardNavbar user={user} plan={plan} onSignOut={onSignOut ?? (() => {})} onProfile={onProfile ?? (() => {})} onHome={onHome ?? (() => {})} onUpgrade={handleUpgradeClick} />
+      <DashboardNavbar user={user} onSignOut={onSignOut ?? (() => {})} onProfile={onProfile ?? (() => {})} onHome={onHome ?? (() => {})} />
 
       <div className="flex-1 max-w-350 w-full mx-auto px-4 sm:px-6 py-6 flex gap-5">
 
-        {/* ── Left sidebar: config + history ───────────────────── */}
-        <aside className="w-72 shrink-0 flex flex-col gap-4">
-          <ResumePanel />
-          <GitHubPanel />
-
-          {/* New JD input */}
-          <div>
-            <SectionLabel>Job Description</SectionLabel>
-            <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
-          </div>
-
-          {/* History below JD input */}
-          <div id="history" className="flex flex-col gap-1 min-h-0">
-            <SectionLabel>History</SectionLabel>
-            <div className="flex flex-col gap-1 overflow-y-auto max-h-72">
-              {jdHistory.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <Clock className="w-7 h-7 mb-2" style={{ color: 'var(--border-strong)' }} />
-                  <p className="text-xs" style={{ color: 'var(--text-faint)' }}>No jobs yet.</p>
-                </div>
-              ) : (
-                jdHistory.map((entry) => (
-                  <JDHistoryItem
-                    key={entry.id}
-                    entry={entry}
-                    active={activeJD?.id === entry.id}
-                    onClick={() => setActiveJD(entry)}
-                    onUpdate={handleUpdate}
-                  />
-                ))
-              )}
+        {/* ── Left sidebar: resume + github + jd + history ─────── */}
+        {sidebarCollapsed ? (
+          <aside className="shrink-0 flex flex-col gap-2 items-center pt-1">
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              title="Expand sidebar"
+              className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+              style={{ background: 'var(--bg-card)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}
+              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </aside>
+        ) : (
+          <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4">
+            {/* Sidebar header with collapse button */}
+            <div className="flex items-center justify-end">
+              <button
+                onClick={() => setSidebarCollapsed(true)}
+                title="Collapse sidebar"
+                className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
+                style={{ color: 'var(--text-faint)' }}
+                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
+                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
             </div>
-          </div>
-        </aside>
 
-        {/* ── Center: PDF viewer (takes all remaining space) ───── */}
+            <ResumePanel />
+            <GitHubPanel />
+
+            <div>
+              <SectionLabel>Job Description</SectionLabel>
+              <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
+            </div>
+
+            <div id="history" className="flex flex-col gap-1 min-h-0">
+              <SectionLabel>History</SectionLabel>
+              <div className="flex flex-col gap-1 overflow-y-auto max-h-72">
+                {jdHistory.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Clock className="w-7 h-7 mb-2" style={{ color: 'var(--border-strong)' }} />
+                    <p className="text-xs" style={{ color: 'var(--text-faint)' }}>No jobs yet.</p>
+                  </div>
+                ) : (
+                  jdHistory.map((entry) => (
+                    <JDHistoryItem
+                      key={entry.id}
+                      entry={entry}
+                      active={activeJD?.id === entry.id}
+                      onClick={() => setActiveId(entry.id)}
+                      onUpdate={handleUpdate}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          </aside>
+        )}
+
+        {/* ── Center: PDF viewer ───────────────────────────────── */}
         <main className="flex-1 flex flex-col gap-4 min-w-0">
           <ResumeViewer jd={activeJD} />
         </main>
+
+        {/* ── Right: Tweak panel ────────────────────────────────── */}
+        {activeJD && (
+          <TweakPanel
+            jd={activeJD}
+            onTweak={handleTweak}
+            collapsed={tweakCollapsed}
+            onToggleCollapse={() => tweakCollapsed ? openTweak() : closeTweak()}
+          />
+        )}
 
       </div>
     </div>

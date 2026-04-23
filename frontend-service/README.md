@@ -1,6 +1,6 @@
 # BrewAI — Frontend Service
 
-React 19 + TypeScript SPA, built with Vite and Tailwind 4.2. Deployed to Firebase Hosting at `brewai-490803.web.app`.
+React 19 + TypeScript SPA, built with Vite and Tailwind 4.2. Deployed to Firebase Hosting at `brewai.us`.
 
 ## Stack
 

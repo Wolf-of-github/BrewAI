@@ -52,7 +52,7 @@ export async function uploadGithubId(githubId: string): Promise<{ ack: boolean; 
   })
 }
 
-export async function listTailored(): Promise<{ jobs: Array<{ job_id: string; jd: string; company: string; role: string; timestamp: string; source_file_id: string; gcs_url: string; status: string }> }> {
+export async function listTailored(): Promise<{ jobs: Array<{ job_id: string; jd: string; company: string; role: string; timestamp: string; source_file_id: string; gcs_url: string; status: string; instructions: string[] }> }> {
   return apiFetch('/resume/tailored/list')
 }
 
@@ -74,10 +74,10 @@ export async function getTailoredContent(draftId: string): Promise<string> {
   return res.text()
 }
 
-export async function tailorResume(jdText: string, userInstructions: string = ""): Promise<{ draft_id: string; company: string; role: string }> {
+export async function tailorResume(jdText: string, userInstructions: string = "", draftId?: string): Promise<{ draft_id: string; company: string; role: string }> {
   return apiFetch('/resume/tailor', {
     method: 'POST',
-    body: JSON.stringify({ jd_text: jdText, user_instructions: userInstructions }),
+    body: JSON.stringify({ jd_text: jdText || undefined, user_instructions: userInstructions || undefined, draft_id: draftId }),
   })
 }
 
@@ -137,6 +137,17 @@ export async function redeemPromoCode(code: string): Promise<{ ack: boolean; pla
 
 export async function simulateDowngrade(): Promise<{ ack: boolean; plan: string }> {
   return apiFetch('/billing/simulate-downgrade', { method: 'POST' })
+}
+
+export async function getFirebaseToken(): Promise<{ token: string }> {
+  const token = getToken()
+  const AUTH_SERVICE = import.meta.env.VITE_AUTH_SERVICE_URL ?? 'https://auth-service-nxyvtmg2na-uc.a.run.app'
+  const res = await fetch(`${AUTH_SERVICE}/auth/firebase-token`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error('Failed to get Firebase token')
+  return res.json()
 }
 
 export async function uploadResume(file: File): Promise<{ fileId: string; gcsUrl: string }> {

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithCustomToken } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
 const AUTH_SERVICE_URL =
@@ -53,6 +53,10 @@ export async function signInWithGoogle(): Promise<void> {
   const picture = result.user.photoURL ?? ''
   document.cookie = `brew_email=${encodeURIComponent(email)}; path=/; max-age=86400; SameSite=Strict`
   document.cookie = `brew_picture=${encodeURIComponent(picture)}; path=/; max-age=86400; SameSite=Strict`
+}
+
+export async function signInToFirestore(customToken: string): Promise<void> {
+  await signInWithCustomToken(auth, customToken)
 }
 
 export function signOut(): void {
