@@ -11,9 +11,10 @@ import {
   Moon,
   BarChart2,
   Tag,
+  RefreshCw,
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
-import { getBillingStatus } from '../lib/api'
+import { getBillingStatus, redeemPromoCode } from '../lib/api'
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
@@ -112,7 +113,10 @@ function ProfileNavbar({ onBack, onSignOut }: { onBack: () => void; onSignOut: (
 type BillingStatus = {
   plan: 'free' | 'pro' | 'beta'
   daily_tailor_count: number
-  daily_tailor_limit: number
+  daily_tailor_limit: number | null
+  tweaks_per_jd: number
+  promo_code: string | null
+  promo_expiry: string | null
   jd_count: number
   download_count: number
   next_billing_date: string | null
@@ -128,6 +132,10 @@ export default function Profile({
   onSignOut: () => void
 }) {
   const [billing, setBilling] = useState<BillingStatus | null>(null)
+  const [promoInput, setPromoInput] = useState('')
+  const [promoLoading, setPromoLoading] = useState(false)
+  const [promoError, setPromoError] = useState<string | null>(null)
+  const [promoSuccess, setPromoSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     getBillingStatus().then(setBilling).catch(() => {})
@@ -135,6 +143,25 @@ export default function Profile({
 
   const isPro = billing?.plan === 'pro'
   const isBeta = billing?.plan === 'beta'
+
+  const handleRedeemPromo = async () => {
+    if (!promoInput.trim()) return
+    setPromoLoading(true)
+    setPromoError(null)
+    setPromoSuccess(null)
+    try {
+      await redeemPromoCode(promoInput.trim())
+      setPromoSuccess('Promo code applied!')
+      setPromoInput('')
+      const updated = await getBillingStatus()
+      setBilling(updated)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to redeem promo code.'
+      setPromoError(msg)
+    } finally {
+      setPromoLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
@@ -217,12 +244,81 @@ export default function Profile({
             />
             <StatCard
               icon={<FileText className="w-3.5 h-3.5" />}
-              label="Today's tailors"
-              value={billing ? `${billing.daily_tailor_count} / ${isPro ? '∞' : billing.daily_tailor_limit}` : '—'}
+              label="Today's brews"
+              value={billing ? `${billing.daily_tailor_count} / ${isPro ? '∞' : (billing.daily_tailor_limit ?? '—')}` : '—'}
+            />
+            <StatCard
+              icon={<RefreshCw className="w-3.5 h-3.5" />}
+              label="Tweaks / brew"
+              value={billing ? billing.tweaks_per_jd : '—'}
             />
           </div>
         </section>
 
+        {/* ── Promo code ───────────────────────────────────────── */}
+        <section
+          className="rounded-2xl border p-6"
+          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+        >
+          <SectionLabel>Promo Code</SectionLabel>
+
+          {/* Active promo banner */}
+          {isBeta && billing?.promo_code && (
+            <div
+              className="flex items-center gap-2 px-4 py-3 rounded-xl mb-4"
+              style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.25)' }}
+            >
+              <Tag className="w-4 h-4 shrink-0" style={{ color: '#8b5cf6' }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold" style={{ color: '#8b5cf6' }}>
+                  {billing.promo_code}
+                </p>
+                {billing.promo_expiry && (
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>
+                    Expires {new Date(billing.promo_expiry).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                )}
+              </div>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(139,92,246,0.15)', color: '#8b5cf6' }}>
+                Active
+              </span>
+            </div>
+          )}
+
+          {/* Input — hidden if user already has active promo */}
+          {!isBeta && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Enter promo code"
+                value={promoInput}
+                onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && handleRedeemPromo()}
+                className="flex-1 px-3 py-2 text-sm rounded-xl outline-none"
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-primary)',
+                }}
+              />
+              <button
+                onClick={handleRedeemPromo}
+                disabled={promoLoading || !promoInput.trim()}
+                className="px-4 py-2 text-sm font-semibold rounded-xl transition-opacity disabled:opacity-40"
+                style={{ background: 'var(--blue)', color: '#fff' }}
+              >
+                {promoLoading ? 'Applying…' : 'Apply'}
+              </button>
+            </div>
+          )}
+
+          {promoError && (
+            <p className="text-xs mt-2" style={{ color: 'var(--red)' }}>{promoError}</p>
+          )}
+          {promoSuccess && (
+            <p className="text-xs mt-2" style={{ color: 'var(--green)' }}>{promoSuccess}</p>
+          )}
+        </section>
 
       </div>
     </div>

@@ -136,7 +136,7 @@ export default function Home() {
             </span>
           </p>
 
-          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+          {error && <p className="text-gray-600 text-sm mb-4">{error}</p>}
 
           <button
             onClick={handleSignIn}

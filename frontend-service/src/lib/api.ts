@@ -101,9 +101,12 @@ export async function handleGithubCallback(code: string): Promise<{ ack: boolean
 }
 
 export async function getBillingStatus(): Promise<{
-  plan: 'free' | 'pro'
+  plan: 'free' | 'pro' | 'beta'
   daily_tailor_count: number
-  daily_tailor_limit: number
+  daily_tailor_limit: number | null
+  tweaks_per_jd: number
+  promo_code: string | null
+  promo_expiry: string | null
   jd_count: number
   download_count: number
   next_billing_date: string | null

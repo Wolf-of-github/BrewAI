@@ -17,3 +17,4 @@ node_modules/
 venv/
 .DS_Store
 scripts
+meta-data

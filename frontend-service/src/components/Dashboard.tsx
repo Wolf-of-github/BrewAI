@@ -21,6 +21,64 @@ import {
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 
+// ─── Toast System ─────────────────────────────────────────────────────────────
+
+interface Toast {
+  id: number
+  message: string
+  type: 'error' | 'info'
+}
+
+let _toastId = 0
+let _addToast: ((message: string, type?: Toast['type']) => void) | null = null
+
+export function showToast(message: string, type: Toast['type'] = 'error') {
+  _addToast?.(message, type)
+}
+
+function ToastContainer() {
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  useEffect(() => {
+    _addToast = (message, type = 'error') => {
+      const id = ++_toastId
+      setToasts((prev) => [...prev, { id, message, type }])
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000)
+    }
+    return () => { _addToast = null }
+  }, [])
+
+  if (toasts.length === 0) return null
+
+  return (
+    <div className="fixed bottom-5 right-5 z-9999 flex flex-col gap-2 max-w-sm">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className="flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg text-sm"
+          style={{
+            background: t.type === 'error' ? '#2d1414' : 'var(--bg-card)',
+            border: `1px solid ${t.type === 'error' ? '#7f1d1d' : 'var(--border)'}`,
+            color: t.type === 'error' ? '#fca5a5' : 'var(--text-primary)',
+          }}
+        >
+          {t.type === 'error'
+            ? <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+            : <Sparkles className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--accent)' }} />
+          }
+          <span className="flex-1">{t.message}</span>
+          <button
+            onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+            className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ResumeFile {
@@ -86,6 +144,12 @@ function ResumePanel() {
       await fetchResumes()
     } catch (err) {
       console.error('[ResumePanel] upload failed:', err)
+      const msg = (err as Error).message
+      showToast(
+        msg === 'HTTP 413' ? 'File too large. Please upload a resume under 10MB.' :
+        msg === 'HTTP 415' ? 'Unsupported file type. Please upload a PDF or DOCX.' :
+        'Resume upload failed. Please try again.'
+      )
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -108,6 +172,7 @@ function ResumePanel() {
       })
     } catch (err) {
       console.error('[ResumePanel] delete failed:', err)
+      showToast('Failed to delete resume. Please try again.')
     }
   }
 
@@ -225,7 +290,10 @@ function GitHubPanel() {
       setLoadingCallback(true)
       handleGithubCallback(code)
         .then(({ github_id }) => setSaved(github_id))
-        .catch((err) => console.error('[GitHubPanel] OAuth callback failed:', err))
+        .catch((err) => {
+          console.error('[GitHubPanel] OAuth callback failed:', err)
+          showToast('Failed to connect GitHub. Please try again.')
+        })
         .finally(() => setLoadingCallback(false))
     }
   }, [])
@@ -236,6 +304,7 @@ function GitHubPanel() {
       window.location.href = url
     } catch (err) {
       console.error('[GitHubPanel] failed to get OAuth URL:', err)
+      showToast('Could not start GitHub connection. Please try again.')
     }
   }
 
@@ -275,6 +344,7 @@ function GitHubPanel() {
                 setSaved(null)
               } catch (err) {
                 console.error('[GitHubPanel] disconnect failed:', err)
+                showToast('Failed to disconnect GitHub. Please try again.')
               } finally {
                 setDisconnecting(false)
               }
@@ -354,7 +424,9 @@ function JDHistoryItem({
     setRole(r)
     setEditing(false)
     if (c !== entry.company || r !== entry.role) {
-      updateTailoredJob(entry.id, { company: c, role: r }).catch(() => {})
+      updateTailoredJob(entry.id, { company: c, role: r }).catch(() => {
+        showToast('Failed to save changes. Please try again.')
+      })
       onUpdate(entry.id, c, r)
     }
   }
@@ -512,7 +584,7 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
   useEffect(() => {
     if (!jd) return
     if (jd.status === 'processing') { setHtml(null); setError(null); return }
-    if (jd.status === 'failed') { setHtml(null); setError(null); return }
+    if (jd.status === 'failed') { setHtml(null); setError('Resume generation failed. Please try re-submitting the job description.'); return }
     let cancelled = false
     setLoading(true)
     setHtml(null)
@@ -575,10 +647,15 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
             const blob = new Blob([printHtml], { type: 'text/html' })
             const url = URL.createObjectURL(blob)
             const win = window.open(url, '_blank')
+            if (!win) {
+              URL.revokeObjectURL(url)
+              showToast('Popups are blocked. Please allow popups for this site to download your resume.')
+              return
+            }
             const localEmail = userEmail.split('@')[0]
             const rand = Math.floor(1000 + Math.random() * 9000)
             const filename = [...[jd.company, jd.role, localEmail].map((s) => s.replace(/\s+/g, '-')), rand].join('—')
-            if (win) win.addEventListener('load', () => { win.document.title = filename; win.print(); URL.revokeObjectURL(url) })
+            win.addEventListener('load', () => { win.document.title = filename; win.print(); URL.revokeObjectURL(url) })
             recordDownload().catch(() => {})
           }}
           disabled={!html}
@@ -599,7 +676,7 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
         )}
         {error && (
           <div className="flex items-center justify-center h-full py-20">
-            <p className="text-sm text-red-500">{error}</p>
+            <p className="text-sm text-gray-600">{error}</p>
           </div>
         )}
         {jd.status === 'processing' && !loading && (
@@ -643,6 +720,14 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
       setOpen(false)
     } catch (err) {
       console.error('[JDInput] tailor failed:', err)
+      const msg = (err as Error).message
+      showToast(
+        msg.includes('429') || msg.toLowerCase().includes('limit') || msg.toLowerCase().includes('all') && msg.toLowerCase().includes('brew')
+          ? msg  // use the server message directly — it's already user-friendly
+          : msg.includes('400')
+          ? 'Please paste a valid job description.'
+          : 'Failed to start brew. Please try again.'
+      )
     } finally {
       setSubmitting(false)
     }
@@ -930,7 +1015,7 @@ function TweakPanel({
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-            placeholder={jd?.status === 'done' ? 'Prompt to tweak resume (Max 5 tweaks)' : 'Select a completed draft to tweak'}
+            placeholder={jd?.status === 'done' ? 'Prompt to tweak resume, kindly be specific with your requests 😊 (Max 5 tweaks)' : 'Select a completed draft to tweak'}
             rows={3}
             disabled={isDisabled}
             className="w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none resize-none disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1001,10 +1086,15 @@ export default function Dashboard({
           unsubscribe()
         } else if (data.status === 'failed') {
           setJdHistory((prev) => prev.map((e) => e.id === draftId ? { ...e, status: 'failed' } : e))
+          showToast('Resume generation failed. Please try re-submitting the job description.')
           unsubscribe()
         }
       },
-      () => {}
+      (err) => {
+        console.error('[openSnapshot] Firestore subscription error:', err)
+        setJdHistory((prev) => prev.map((e) => e.id === draftId ? { ...e, status: 'failed' } : e))
+        showToast('Lost connection to status updates. Please refresh the page.')
+      }
     )
   }
 
@@ -1026,7 +1116,9 @@ export default function Dashboard({
       setJdHistory(entries)
       entries.filter((e) => e.status === 'processing').forEach((e) => openSnapshot(e.id))
       setActiveId((prev) => prev ?? (entries[0]?.id ?? null))
-    }).catch(() => {})
+    }).catch(() => {
+      showToast('Failed to load your brew history. Please refresh the page.')
+    })
   }
 
   useEffect(() => {
@@ -1050,17 +1142,28 @@ export default function Dashboard({
   }, [])
 
   async function handleTweak(draftId: string, instruction: string) {
-    await apiTailorResume('', instruction, draftId)
-    setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
-      ...e,
-      status: 'processing',
-      instructions: [...e.instructions, instruction],
-    } : e))
-    openSnapshot(draftId)
+    try {
+      await apiTailorResume('', instruction, draftId)
+      setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
+        ...e,
+        status: 'processing',
+        instructions: [...e.instructions, instruction],
+      } : e))
+      openSnapshot(draftId)
+    } catch (err) {
+      console.error('[handleTweak] failed:', err)
+      const msg = (err as Error).message
+      showToast(
+        msg.toLowerCase().includes('limit') || msg.includes('429')
+          ? msg  // server message is already user-friendly
+          : 'Tweak failed. Please try again.'
+      )
+    }
   }
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+      <ToastContainer />
       <DashboardNavbar user={user} onSignOut={onSignOut ?? (() => {})} onProfile={onProfile ?? (() => {})} onHome={onHome ?? (() => {})} />
 
       <div className="flex-1 max-w-350 w-full mx-auto px-4 sm:px-6 py-6 flex gap-5">
