@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getGithubOAuthUrl, handleGithubCallback, disconnectGithub as apiDisconnectGithub, updateTailoredJob, recordDownload, getFirebaseToken } from '../lib/api'
-import { db, signInToFirestore } from '../lib/firebase'
+import { auth, db, signInToFirestore } from '../lib/firebase'
 import { doc, onSnapshot } from 'firebase/firestore'
 import {
   Github,
@@ -17,8 +17,6 @@ import {
   LogOut,
   Sun,
   Moon,
-  ChevronRight,
-  ChevronLeft,
   Send,
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
@@ -571,7 +569,10 @@ function ResumeViewer({ jd }: { jd: JDEntry | null }) {
         <button
           onClick={() => {
             if (!html) return
-            const blob = new Blob([html], { type: 'text/html' })
+            // Inject print CSS to suppress browser-added headers/footers (URL, page numbers, date)
+            const printCss = `<style>@page{margin:0;size:auto;}body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style>`
+            const printHtml = html.replace(/<\/head>/i, `${printCss}</head>`)
+            const blob = new Blob([printHtml], { type: 'text/html' })
             const url = URL.createObjectURL(blob)
             const win = window.open(url, '_blank')
             if (win) win.addEventListener('load', () => { win.print(); URL.revokeObjectURL(url) })
@@ -967,7 +968,7 @@ export default function Dashboard({
   const [jdHistory, setJdHistory] = useState<JDEntry[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [tweakCollapsed, setTweakCollapsed] = useState(true)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const firebaseReady = useRef(false)
 
   // Derive activeJD from jdHistory — snapshot updates flow through automatically, no stale closures
   const activeJD = jdHistory.find((e) => e.id === activeId) ?? null
@@ -981,15 +982,23 @@ export default function Dashboard({
   // }
 
   function openSnapshot(draftId: string) {
-    console.log(`[onSnapshot] started draftId=${draftId}`)
+    const { currentUser } = auth
+    console.log(`[onSnapshot] starting listener draftId=${draftId} firebaseReady=${firebaseReady.current} firebaseUser=${currentUser?.uid ?? 'none'}`)
+    if (!firebaseReady.current) {
+      console.warn(`[onSnapshot] Firebase auth not ready yet — listener for ${draftId} may fail with permission-denied`)
+    }
     const draftRef = doc(db, 'drafts', draftId)
     const unsubscribe = onSnapshot(
       draftRef,
       (snap) => {
-        if (!snap.exists()) return
+        if (!snap.exists()) {
+          console.log(`[onSnapshot] doc does not exist yet draftId=${draftId}`)
+          return
+        }
         const data = snap.data()!
+        console.log(`[onSnapshot] received update draftId=${draftId} status=${data.status}`)
         if (data.status === 'completed') {
-          console.log(`[onSnapshot] completed draftId=${draftId}`)
+          console.log(`[onSnapshot] completed draftId=${draftId} — updating UI and unsubscribing`)
           setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
             ...e,
             status: 'done',
@@ -997,16 +1006,14 @@ export default function Dashboard({
             ...(data.company ? { company: data.company } : {}),
             ...(data.role ? { role: data.role } : {}),
           } : e))
-          console.log(`[onSnapshot] unsubscribed draftId=${draftId}`)
           unsubscribe()
         } else if (data.status === 'failed') {
-          console.log(`[onSnapshot] failed draftId=${draftId}`)
+          console.log(`[onSnapshot] failed draftId=${draftId} — updating UI and unsubscribing`)
           setJdHistory((prev) => prev.map((e) => e.id === draftId ? { ...e, status: 'failed' } : e))
-          console.log(`[onSnapshot] unsubscribed draftId=${draftId}`)
           unsubscribe()
         }
       },
-      (err) => console.error(`[onSnapshot] error draftId=${draftId}:`, err)
+      (err) => console.error(`[onSnapshot] permission/error draftId=${draftId}:`, err.code, err.message)
     )
   }
 
@@ -1034,10 +1041,22 @@ export default function Dashboard({
   useEffect(() => {
     // Sign into Firebase with a custom token so onSnapshot has proper auth,
     // then load history (which opens snapshot listeners for processing jobs)
+    console.log('[firebase-auth] fetching custom token...')
     getFirebaseToken()
-      .then(({ token }) => signInToFirestore(token))
-      .then(() => fetchHistory())
-      .catch((err) => console.error('[firebase-auth] sign-in failed:', err))
+      .then(({ token }) => {
+        console.log('[firebase-auth] signing into Firestore with custom token...')
+        return signInToFirestore(token)
+      })
+      .then(() => {
+        firebaseReady.current = true
+        console.log(`[firebase-auth] signed in successfully uid=${auth.currentUser?.uid}`)
+        return fetchHistory()
+      })
+      .catch((err) => {
+        console.error('[firebase-auth] sign-in failed — onSnapshot listeners will likely fail with permission-denied:', err)
+        // Still load history so the UI shows past jobs, even if listeners won't work
+        fetchHistory()
+      })
   }, [])
 
   function addJD(entry: JDEntry) {
@@ -1067,66 +1086,37 @@ export default function Dashboard({
       <div className="flex-1 max-w-350 w-full mx-auto px-4 sm:px-6 py-6 flex gap-5">
 
         {/* ── Left sidebar: resume + github + jd + history ─────── */}
-        {sidebarCollapsed ? (
-          <aside className="shrink-0 flex flex-col gap-2 items-center pt-1">
-            <button
-              onClick={() => setSidebarCollapsed(false)}
-              title="Expand sidebar"
-              className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-              style={{ background: 'var(--bg-card)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}
-              onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-              onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </aside>
-        ) : (
-          <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4">
-            {/* Sidebar header with collapse button */}
-            <div className="flex items-center justify-end">
-              <button
-                onClick={() => setSidebarCollapsed(true)}
-                title="Collapse sidebar"
-                className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
-                style={{ color: 'var(--text-faint)' }}
-                onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-                onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-            </div>
+        <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4">
+          <ResumePanel />
+          <GitHubPanel />
 
-            <ResumePanel />
-            <GitHubPanel />
+          <div>
+            <SectionLabel>Job Description</SectionLabel>
+            <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
+          </div>
 
-            <div>
-              <SectionLabel>Job Description</SectionLabel>
-              <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
+          <div id="history" className="flex flex-col gap-1 min-h-0">
+            <SectionLabel>History</SectionLabel>
+            <div className="flex flex-col gap-1 overflow-y-auto max-h-72">
+              {jdHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <Clock className="w-7 h-7 mb-2" style={{ color: 'var(--border-strong)' }} />
+                  <p className="text-xs" style={{ color: 'var(--text-faint)' }}>No jobs yet.</p>
+                </div>
+              ) : (
+                jdHistory.map((entry) => (
+                  <JDHistoryItem
+                    key={entry.id}
+                    entry={entry}
+                    active={activeJD?.id === entry.id}
+                    onClick={() => setActiveId(entry.id)}
+                    onUpdate={handleUpdate}
+                  />
+                ))
+              )}
             </div>
-
-            <div id="history" className="flex flex-col gap-1 min-h-0">
-              <SectionLabel>History</SectionLabel>
-              <div className="flex flex-col gap-1 overflow-y-auto max-h-72">
-                {jdHistory.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <Clock className="w-7 h-7 mb-2" style={{ color: 'var(--border-strong)' }} />
-                    <p className="text-xs" style={{ color: 'var(--text-faint)' }}>No jobs yet.</p>
-                  </div>
-                ) : (
-                  jdHistory.map((entry) => (
-                    <JDHistoryItem
-                      key={entry.id}
-                      entry={entry}
-                      active={activeJD?.id === entry.id}
-                      onClick={() => setActiveId(entry.id)}
-                      onUpdate={handleUpdate}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          </aside>
-        )}
+          </div>
+        </aside>
 
         {/* ── Center: PDF viewer ───────────────────────────────── */}
         <main className="flex-1 flex flex-col gap-4 min-w-0">

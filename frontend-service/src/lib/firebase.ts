@@ -6,13 +6,13 @@ const AUTH_SERVICE_URL =
   import.meta.env.VITE_AUTH_SERVICE_URL ?? 'https://auth-service-nxyvtmg2na-uc.a.run.app'
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCTS0kUJDrVbw74xDByZXrkOn27KPo-JH4",
-  authDomain: "brew-prod-1723b.firebaseapp.com",
-  projectId: "brew-prod-1723b",
-  storageBucket: "brew-prod-1723b.firebasestorage.app",
-  messagingSenderId: "191395174205",
-  appId: "1:191395174205:web:d14c6acd22b541eb561754",
-  measurementId: "G-923JGXB7JM"
+  apiKey: "AIzaSyDrvL8_5xZBpgzR389CWUz-bvZMommNMCw",
+  authDomain: "brew-prod-492719.firebaseapp.com",
+  projectId: "brew-prod-492719",
+  storageBucket: "brew-prod-492719.firebasestorage.app",
+  messagingSenderId: "450400408594",
+  appId: "1:450400408594:web:be0bbca686cc57c2c574cb",
+  measurementId: "G-GPPTDDTBZQ"
 }
 
 const app = initializeApp(firebaseConfig)
