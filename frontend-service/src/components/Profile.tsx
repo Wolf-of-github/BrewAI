@@ -9,14 +9,11 @@ import {
   Download,
   Sun,
   Moon,
-  CheckCircle,
-  X,
-  CalendarDays,
   BarChart2,
   Tag,
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
-import { getBillingStatus, simulateDowngrade, redeemPromoCode } from '../lib/api'
+import { getBillingStatus } from '../lib/api'
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
@@ -108,60 +105,7 @@ function ProfileNavbar({ onBack, onSignOut }: { onBack: () => void; onSignOut: (
   )
 }
 
-// ─── Confirm modal (upgrade / downgrade) ──────────────────────────────────────
 
-function ConfirmModal({
-  title,
-  body,
-  confirmLabel,
-  confirmStyle,
-  onConfirm,
-  onCancel,
-}: {
-  title: string
-  body: string
-  confirmLabel: string
-  confirmStyle?: React.CSSProperties
-  onConfirm: () => void
-  onCancel: () => void
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div
-        className="relative w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4"
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
-      >
-        <button
-          onClick={onCancel}
-          className="absolute top-4 right-4 transition-colors"
-          style={{ color: 'var(--text-faint)' }}
-          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'}
-          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
-        >
-          <X className="w-4 h-4" />
-        </button>
-        <p className="font-semibold text-sm pr-6" style={{ color: 'var(--text-primary)' }}>{title}</p>
-        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-subtle)' }}>{body}</p>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2 rounded-xl text-sm border transition-opacity hover:opacity-80"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
-            style={confirmStyle ?? { background: 'var(--accent)', color: 'var(--accent-text)' }}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─── Main Profile Page ─────────────────────────────────────────────────────────
 
@@ -184,67 +128,16 @@ export default function Profile({
   onSignOut: () => void
 }) {
   const [billing, setBilling] = useState<BillingStatus | null>(null)
-  const [modal, setModal] = useState<'upgrade' | 'downgrade' | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [promoCode, setPromoCode] = useState('')
-  const [promoLoading, setPromoLoading] = useState(false)
-  const [promoMessage, setPromoMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   useEffect(() => {
     getBillingStatus().then(setBilling).catch(() => {})
   }, [])
-
-  async function handleDowngrade() {
-    setLoading(true)
-    try {
-      await simulateDowngrade()
-      setBilling((prev) => prev ? { ...prev, plan: 'free', next_billing_date: null } : prev)
-    } finally {
-      setLoading(false)
-      setModal(null)
-    }
-  }
-
-  async function handleRedeemPromo() {
-    if (!promoCode.trim()) return
-    setPromoLoading(true)
-    setPromoMessage(null)
-    try {
-      const res = await redeemPromoCode(promoCode.trim())
-      setBilling((prev) => prev ? { ...prev, plan: 'beta', daily_tailor_limit: res.daily_tailor_limit } : prev)
-      setPromoMessage({ type: 'success', text: `Beta access activated! ${res.daily_tailor_limit} tailors/day until ${new Date(res.promo_expiry).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.` })
-      setPromoCode('')
-    } catch (err: unknown) {
-      setPromoMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to redeem code.' })
-    } finally {
-      setPromoLoading(false)
-    }
-  }
 
   const isPro = billing?.plan === 'pro'
   const isBeta = billing?.plan === 'beta'
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
-      {modal === 'upgrade' && (
-        <ConfirmModal
-          title="Coming Soon"
-          body="Stripe payment integration is not yet available. Pro upgrades will be enabled shortly — check back soon!"
-          confirmLabel="Got it"
-          onConfirm={() => setModal(null)}
-          onCancel={() => setModal(null)}
-        />
-      )}
-      {modal === 'downgrade' && (
-        <ConfirmModal
-          title="Downgrade to Free"
-          body="Your Pro access will end immediately. You'll be limited to 3 tailors per day. You can upgrade again at any time."
-          confirmLabel={loading ? 'Downgrading…' : 'Confirm downgrade'}
-          confirmStyle={{ background: 'var(--red-subtle, #fee2e2)', color: '#dc2626' }}
-          onConfirm={handleDowngrade}
-          onCancel={() => setModal(null)}
-        />
-      )}
 
       <ProfileNavbar onBack={onBack} onSignOut={onSignOut} />
 
@@ -330,144 +223,6 @@ export default function Profile({
           </div>
         </section>
 
-        {/* ── Plan & Billing ───────────────────────────────────── */}
-        <section
-          className="rounded-2xl border p-6 flex flex-col gap-5"
-          style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-        >
-          <SectionLabel>Plan & Billing</SectionLabel>
-
-          {/* Current plan card */}
-          <div
-            className="rounded-xl p-4 flex items-start justify-between gap-4"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-          >
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                {isPro ? 'Pro Plan' : isBeta ? 'Beta Plan' : 'Free Plan'}
-              </p>
-              <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
-                {isPro
-                  ? '$20 / month · Unlimited tailoring'
-                  : isBeta
-                  ? `${billing?.daily_tailor_limit ?? 20} tailors per day · Promo access`
-                  : '3 tailors per day · Free forever'}
-              </p>
-              {isPro && billing?.next_billing_date && (
-                <div className="flex items-center gap-1.5 mt-1 text-xs" style={{ color: 'var(--text-faint)' }}>
-                  <CalendarDays className="w-3.5 h-3.5" />
-                  Next billing: {new Date(billing.next_billing_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                </div>
-              )}
-            </div>
-            {isPro ? (
-              <span
-                className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full"
-                style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}
-              >
-                Active
-              </span>
-            ) : isBeta ? (
-              <span
-                className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full"
-                style={{ background: 'rgba(139,92,246,0.15)', color: '#8b5cf6' }}
-              >
-                Active
-              </span>
-            ) : (
-              <span
-                className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full"
-                style={{ background: 'var(--blue-subtle)', color: 'var(--text-faint)' }}
-              >
-                Active
-              </span>
-            )}
-          </div>
-
-          {/* Pro features list */}
-          {!isPro && !isBeta && (
-            <ul className="text-xs flex flex-col gap-2" style={{ color: 'var(--text-subtle)' }}>
-              {['Unlimited resume tailoring', 'Priority AI processing', 'Cancel anytime'].map((f) => (
-                <li key={f} className="flex items-center gap-2">
-                  <CheckCircle className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
-                  {f}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {/* Upgrade / Downgrade */}
-          <div className="flex gap-3">
-            {!isPro && !isBeta ? (
-              <button
-                onClick={() => setModal('upgrade')}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
-                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
-              >
-                <Sparkles className="w-4 h-4" />
-                Upgrade to Pro — $20/mo
-              </button>
-            ) : isPro ? (
-              <button
-                onClick={() => setModal('downgrade')}
-                className="py-2 px-4 rounded-xl text-xs border transition-opacity hover:opacity-80"
-                style={{ borderColor: 'var(--border)', color: 'var(--text-faint)' }}
-              >
-                Downgrade to Free
-              </button>
-            ) : null}
-          </div>
-
-          {/* Policy note */}
-          <p className="text-[10px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-            {isPro
-              ? 'Downgrading takes effect immediately. You keep Pro access for the rest of the billing period.'
-              : isBeta
-              ? 'Beta access expires on the promo code expiry date.'
-              : 'Upgrade takes effect immediately. Cancel anytime — no questions asked.'}
-          </p>
-        </section>
-
-        {/* ── Promo Code ───────────────────────────────────── */}
-        {!isPro && !isBeta && (
-          <section
-            className="rounded-2xl border p-6 flex flex-col gap-4"
-            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
-          >
-            <SectionLabel>Promo Code</SectionLabel>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === 'Enter' && handleRedeemPromo()}
-                placeholder="Enter code"
-                className="flex-1 px-3 py-2 rounded-xl text-sm outline-none"
-                style={{
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-primary)',
-                }}
-              />
-              <button
-                onClick={handleRedeemPromo}
-                disabled={promoLoading || !promoCode.trim()}
-                className="px-4 py-2 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
-                style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
-              >
-                {promoLoading ? 'Redeeming…' : 'Redeem'}
-              </button>
-            </div>
-            {promoMessage && (
-              <p
-                className="text-xs"
-                style={{ color: promoMessage.type === 'success' ? 'var(--accent)' : '#dc2626' }}
-              >
-                {promoMessage.text}
-              </p>
-            )}
-          </section>
-        )}
 
       </div>
     </div>

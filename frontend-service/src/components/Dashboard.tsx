@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getGithubOAuthUrl, handleGithubCallback, disconnectGithub as apiDisconnectGithub, updateTailoredJob, recordDownload, getFirebaseToken } from '../lib/api'
-import { auth, db, signInToFirestore } from '../lib/firebase'
+import { db, signInToFirestore } from '../lib/firebase'
 import { doc, onSnapshot } from 'firebase/firestore'
 import {
   Github,
@@ -504,7 +504,7 @@ function BrewCountdown() {
 }
 
 // Resume viewer panel
-function ResumeViewer({ jd }: { jd: JDEntry | null }) {
+function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string }) {
   const [html, setHtml] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -575,7 +575,10 @@ function ResumeViewer({ jd }: { jd: JDEntry | null }) {
             const blob = new Blob([printHtml], { type: 'text/html' })
             const url = URL.createObjectURL(blob)
             const win = window.open(url, '_blank')
-            if (win) win.addEventListener('load', () => { win.print(); URL.revokeObjectURL(url) })
+            const localEmail = userEmail.split('@')[0]
+            const rand = Math.floor(1000 + Math.random() * 9000)
+            const filename = [...[jd.company, jd.role, localEmail].map((s) => s.replace(/\s+/g, '-')), rand].join('—')
+            if (win) win.addEventListener('load', () => { win.document.title = filename; win.print(); URL.revokeObjectURL(url) })
             recordDownload().catch(() => {})
           }}
           disabled={!html}
@@ -927,7 +930,7 @@ function TweakPanel({
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-            placeholder={jd?.status === 'done' ? 'Add an instruction…' : 'Select a completed draft to tweak'}
+            placeholder={jd?.status === 'done' ? 'Prompt to tweak resume (Max 5 tweaks)' : 'Select a completed draft to tweak'}
             rows={3}
             disabled={isDisabled}
             className="w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none resize-none disabled:opacity-40 disabled:cursor-not-allowed"
@@ -968,7 +971,6 @@ export default function Dashboard({
   const [jdHistory, setJdHistory] = useState<JDEntry[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [tweakCollapsed, setTweakCollapsed] = useState(true)
-  const firebaseReady = useRef(false)
 
   // Derive activeJD from jdHistory — snapshot updates flow through automatically, no stale closures
   const activeJD = jdHistory.find((e) => e.id === activeId) ?? null
@@ -982,23 +984,13 @@ export default function Dashboard({
   // }
 
   function openSnapshot(draftId: string) {
-    const { currentUser } = auth
-    console.log(`[onSnapshot] starting listener draftId=${draftId} firebaseReady=${firebaseReady.current} firebaseUser=${currentUser?.uid ?? 'none'}`)
-    if (!firebaseReady.current) {
-      console.warn(`[onSnapshot] Firebase auth not ready yet — listener for ${draftId} may fail with permission-denied`)
-    }
     const draftRef = doc(db, 'drafts', draftId)
     const unsubscribe = onSnapshot(
       draftRef,
       (snap) => {
-        if (!snap.exists()) {
-          console.log(`[onSnapshot] doc does not exist yet draftId=${draftId}`)
-          return
-        }
+        if (!snap.exists()) return
         const data = snap.data()!
-        console.log(`[onSnapshot] received update draftId=${draftId} status=${data.status}`)
         if (data.status === 'completed') {
-          console.log(`[onSnapshot] completed draftId=${draftId} — updating UI and unsubscribing`)
           setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
             ...e,
             status: 'done',
@@ -1008,12 +1000,11 @@ export default function Dashboard({
           } : e))
           unsubscribe()
         } else if (data.status === 'failed') {
-          console.log(`[onSnapshot] failed draftId=${draftId} — updating UI and unsubscribing`)
           setJdHistory((prev) => prev.map((e) => e.id === draftId ? { ...e, status: 'failed' } : e))
           unsubscribe()
         }
       },
-      (err) => console.error(`[onSnapshot] permission/error draftId=${draftId}:`, err.code, err.message)
+      () => {}
     )
   }
 
@@ -1039,30 +1030,19 @@ export default function Dashboard({
   }
 
   useEffect(() => {
-    // Sign into Firebase with a custom token so onSnapshot has proper auth,
-    // then load history (which opens snapshot listeners for processing jobs)
-    console.log('[firebase-auth] fetching custom token...')
     getFirebaseToken()
-      .then(({ token }) => {
-        console.log('[firebase-auth] signing into Firestore with custom token...')
-        return signInToFirestore(token)
-      })
+      .then(({ token }) => signInToFirestore(token))
       .then(() => {
-        firebaseReady.current = true
-        console.log(`[firebase-auth] signed in successfully uid=${auth.currentUser?.uid}`)
         return fetchHistory()
       })
-      .catch((err) => {
-        console.error('[firebase-auth] sign-in failed — onSnapshot listeners will likely fail with permission-denied:', err)
-        // Still load history so the UI shows past jobs, even if listeners won't work
-        fetchHistory()
-      })
+      .catch(() => fetchHistory())
   }, [])
 
   function addJD(entry: JDEntry) {
     setJdHistory((prev) => [entry, ...prev])
     setActiveId(entry.id)
     openSnapshot(entry.id)
+    openTweak()
   }
 
   const handleUpdate = useCallback((id: string, company: string, role: string) => {
@@ -1086,41 +1066,58 @@ export default function Dashboard({
       <div className="flex-1 max-w-350 w-full mx-auto px-4 sm:px-6 py-6 flex gap-5">
 
         {/* ── Left sidebar: resume + github + jd + history ─────── */}
-        <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4">
-          <ResumePanel />
-          <GitHubPanel />
+        {!tweakCollapsed ? (
+          <aside
+            id="left-sidebar-collapsed"
+            onClick={closeTweak}
+            title="Open sidebar"
+            className="w-10 shrink-0 flex flex-col items-center gap-5 pt-3 rounded-2xl border cursor-pointer transition-colors"
+            style={{ background: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text-faint)' }}
+            onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--accent)'}
+            onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
+          >
+            <FileText className="w-4 h-4 shrink-0" />
+            <Github className="w-4 h-4 shrink-0" />
+            <Plus className="w-4 h-4 shrink-0" />
+            <Clock className="w-4 h-4 shrink-0" />
+          </aside>
+        ) : (
+          <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4">
+            <ResumePanel />
+            <GitHubPanel />
 
-          <div>
-            <SectionLabel>Job Description</SectionLabel>
-            <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
-          </div>
-
-          <div id="history" className="flex flex-col gap-1 min-h-0">
-            <SectionLabel>History</SectionLabel>
-            <div className="flex flex-col gap-1 overflow-y-auto max-h-72">
-              {jdHistory.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <Clock className="w-7 h-7 mb-2" style={{ color: 'var(--border-strong)' }} />
-                  <p className="text-xs" style={{ color: 'var(--text-faint)' }}>No jobs yet.</p>
-                </div>
-              ) : (
-                jdHistory.map((entry) => (
-                  <JDHistoryItem
-                    key={entry.id}
-                    entry={entry}
-                    active={activeJD?.id === entry.id}
-                    onClick={() => setActiveId(entry.id)}
-                    onUpdate={handleUpdate}
-                  />
-                ))
-              )}
+            <div>
+              <SectionLabel>Job Description</SectionLabel>
+              <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
             </div>
-          </div>
-        </aside>
+
+            <div id="history" className="flex flex-col gap-1 min-h-0">
+              <SectionLabel>History</SectionLabel>
+              <div className="flex flex-col gap-1 overflow-y-auto max-h-72">
+                {jdHistory.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Clock className="w-7 h-7 mb-2" style={{ color: 'var(--border-strong)' }} />
+                    <p className="text-xs" style={{ color: 'var(--text-faint)' }}>No jobs yet.</p>
+                  </div>
+                ) : (
+                  jdHistory.map((entry) => (
+                    <JDHistoryItem
+                      key={entry.id}
+                      entry={entry}
+                      active={activeJD?.id === entry.id}
+                      onClick={() => setActiveId(entry.id)}
+                      onUpdate={handleUpdate}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          </aside>
+        )}
 
         {/* ── Center: PDF viewer ───────────────────────────────── */}
-        <main className="flex-1 flex flex-col gap-4 min-w-0">
-          <ResumeViewer jd={activeJD} />
+        <main id="resume-panel" className="flex-1 flex flex-col gap-4 min-w-0">
+          <ResumeViewer jd={activeJD} userEmail={user?.email ?? ''} />
         </main>
 
         {/* ── Right: Tweak panel ────────────────────────────────── */}
