@@ -48,7 +48,7 @@ export default function Terms() {
         </Section>
 
         <Section title="7. Termination">
-          <p>We may suspend or terminate your account at any time for violation of these Terms or for any other reason at our discretion. You may delete your account at any time by contacting <a href="mailto:hello@brewai.app" style={{ color: 'var(--accent)' }} className="hover:underline">hello@brewai.app</a>.</p>
+          <p>We may suspend or terminate your account at any time for violation of these Terms or for any other reason at our discretion. You may delete your account at any time by using the <strong>Contact</strong> button in the footer.</p>
         </Section>
 
         <Section title="8. Disclaimers">
@@ -60,7 +60,7 @@ export default function Terms() {
         </Section>
 
         <Section title="10. Contact">
-          <p>Questions? Email us at <a href="mailto:contact@brewai.com" style={{ color: 'var(--accent)' }} className="hover:underline">hello@brewai.app</a>.</p>
+          <p>Questions? Use the <strong>Contact</strong> button in the footer to reach us.</p>
         </Section>
       </main>
       <Footer />

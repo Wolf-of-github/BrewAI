@@ -37,7 +37,6 @@ export default function Navbar() {
         </button>
 
         <div className="flex items-center gap-3">
-          {/* Theme toggle */}
           <button
             onClick={toggleTheme}
             aria-label="Toggle theme"

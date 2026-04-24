@@ -142,6 +142,16 @@ export async function simulateDowngrade(): Promise<{ ack: boolean; plan: string 
   return apiFetch('/billing/simulate-downgrade', { method: 'POST' })
 }
 
+export async function sendContactEmail(email: string, body: string, subject?: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_GATEWAY}/contact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, body, subject }),
+  })
+  if (!res.ok) throw new Error(await getErrorMessage(res))
+  return res.json()
+}
+
 export async function getFirebaseToken(): Promise<{ token: string }> {
   const token = getToken()
   const AUTH_SERVICE = import.meta.env.VITE_AUTH_SERVICE_URL ?? 'https://auth-service-nxyvtmg2na-uc.a.run.app'

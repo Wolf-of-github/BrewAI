@@ -51,7 +51,7 @@ export default function Privacy() {
         </Section>
 
         <Section title="7. Contact">
-          <p>Questions or requests? Email us at <a href="mailto:hello@brewai.app" style={{ color: 'var(--accent)' }} className="hover:underline">contact@brewai.com</a>.</p>
+          <p>Questions or requests? Use the <strong>Contact</strong> button in the footer to reach us.</p>
         </Section>
       </main>
       <Footer />
