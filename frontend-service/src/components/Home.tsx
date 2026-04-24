@@ -33,7 +33,7 @@ const steps = [
     step: '03',
     icon: <FileSearch className="w-5 h-5" />,
     title: 'Paste the job description',
-    desc: 'Any role, any company. Apollo reads what recruiters and ATS actually care about.',
+    desc: 'Any role, any company. BrewAI reads what recruiters and ATS actually care about.',
     detail: 'Keywords, skills, requirements — extracted instantly.',
     color: 'orange',
   },
@@ -42,7 +42,7 @@ const steps = [
     icon: <Download className="w-5 h-5" />,
     title: 'Download and apply',
     desc: 'Your resume, tailored to that specific role. Clean, one-page, ATS-ready.',
-    detail: 'PDF and DOCX. Ready to send in minutes.',
+    detail: 'Ready to send in seconds.',
     color: 'amber',
   },
 ]

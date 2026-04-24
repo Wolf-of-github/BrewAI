@@ -39,7 +39,7 @@ export default function Privacy() {
         </Section>
 
         <Section title="4. Data Retention">
-          <p>Your uploaded resumes and generated tailored resumes are retained as long as your account is active. You may request deletion of your data at any time by contacting us at <a href="mailto:contact@brewai.com" style={{ color: 'var(--accent)' }} className="hover:underline">hello@brewai.app</a>.</p>
+          <p>Your uploaded resumes and generated tailored resumes are retained as long as your account is active. You may request deletion of your data at any time by contacting us at <a href="mailto:contact@brewai.us" style={{ color: 'var(--accent)' }} className="hover:underline">contact@brweai.us</a> or using the <strong>Contact</strong> button in the footer.</p>
         </Section>
 
         <Section title="5. Security">
