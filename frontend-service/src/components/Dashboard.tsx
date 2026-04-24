@@ -18,6 +18,9 @@ import {
   Sun,
   Moon,
   Send,
+  LayoutList,
+  Eye,
+  Wand2,
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 
@@ -51,7 +54,7 @@ function ToastContainer() {
   if (toasts.length === 0) return null
 
   return (
-    <div className="fixed bottom-5 right-5 z-9999 flex flex-col gap-2 max-w-sm">
+    <div className="fixed bottom-20 sm:bottom-5 right-3 sm:right-5 z-9999 flex flex-col gap-2 max-w-[calc(100vw-1.5rem)] sm:max-w-sm">
       {toasts.map((t) => (
         <div
           key={t.id}
@@ -119,15 +122,17 @@ function ResumePanel({ firestoreReady }: { firestoreReady: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const unsubRef = useRef<(() => void) | null>(null)
 
-  // Subscribe to parsedResumes/{userId} snapshot to know when parsing completes
+  // Subscribe to parsedResumes/{userId} snapshot to know when parsing completes.
+  // Skip the first fire — the doc may have a stale status from a previous upload.
   function subscribeToParseStatus(userId: string, uploadedName: string, uploadedAt: string) {
-    // Unsubscribe any previous listener
     unsubRef.current?.()
     setUploadState('parsing')
 
+    let firstFire = true
     const unsub = onSnapshot(
       doc(db, 'parsedResumes', userId),
       (snap) => {
+        if (firstFire) { firstFire = false; return }
         if (!snap.exists()) return
         const data = snap.data()
         const status = data?.status as string | undefined
@@ -930,7 +935,7 @@ function DashboardNavbar({
       className="sticky top-0 z-50 border-b backdrop-blur-md"
       style={{ background: 'var(--navbar-bg)', borderColor: 'var(--border)' }}
     >
-      <div className="max-w-350 mx-auto px-6 h-14 flex items-center justify-between">
+      <div className="max-w-350 mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         <button
           id="home-button"
           onClick={onHome}
@@ -941,7 +946,7 @@ function DashboardNavbar({
             Brew AI
           </span>
           <span
-            className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full border"
+            className="hidden sm:inline ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full border"
             style={{
               color: 'var(--accent)',
               background: 'var(--accent-subtle)',
@@ -1047,7 +1052,7 @@ function TweakPanel({
   }
 
   return (
-    <div className="w-72 shrink-0 sticky top-20 self-start max-h-[calc(100vh-5rem)] flex flex-col">
+    <div className="hidden sm:flex w-72 shrink-0 sticky top-20 self-start max-h-[calc(100vh-5rem)] flex-col">
       <div
         className="rounded-2xl border p-5 flex flex-col gap-4 overflow-y-auto max-h-[calc(100vh-5rem)]"
         style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
@@ -1134,7 +1139,81 @@ function TweakPanel({
   )
 }
 
+// ─── Mobile Tweak Content (inline, no fixed width) ────────────────────────────
+
+function MobileTweakContent({ jd, onTweak }: { jd: JDEntry; onTweak: (draftId: string, instruction: string) => void }) {
+  const [instruction, setInstruction] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit() {
+    if (!instruction.trim() || submitting || jd.status === 'processing') return
+    const text = instruction.trim()
+    setSubmitting(true)
+    try {
+      await onTweak(jd.id, text)
+      setInstruction('')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const isDisabled = jd.status === 'processing' || submitting
+
+  return (
+    <div
+      className="rounded-2xl border p-5 flex flex-col gap-4"
+      style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+    >
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{jd.company}</p>
+        <p className="text-xs truncate" style={{ color: 'var(--text-faint)' }}>{jd.role}</p>
+      </div>
+
+      {jd.instructions && jd.instructions.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--text-xfaint)' }}>Past instructions</p>
+          {jd.instructions.map((instr, i) => (
+            <div key={i} className="px-2.5 py-1.5 rounded-lg text-xs" style={{ background: 'var(--blue-subtle)', color: 'var(--text-muted)' }}>
+              {instr}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {jd.status === 'processing' && (
+          <p className="text-xs text-center" style={{ color: 'var(--accent)' }}>
+            <Sparkles className="w-3 h-3 inline mr-1 animate-pulse" />
+            Brewing…
+          </p>
+        )}
+        <textarea
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
+          placeholder={jd.status === 'done' ? 'Prompt to tweak resume (Max 5 tweaks)' : 'Select a completed draft to tweak'}
+          rows={4}
+          disabled={isDisabled}
+          className="w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none resize-none disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: 'var(--bg-secondary)', borderColor: 'var(--accent-border)', color: 'var(--text-primary)' }}
+        />
+        <button
+          onClick={submit}
+          disabled={isDisabled || !instruction.trim()}
+          className="w-full py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+        >
+          <Send className="w-3.5 h-3.5" />
+          {submitting ? 'Sending…' : 'Brew tweak'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Dashboard ────────────────────────────────────────────────────────────
+
+type MobileTab = 'setup' | 'preview' | 'tweak'
 
 export default function Dashboard({
   user,
@@ -1151,6 +1230,7 @@ export default function Dashboard({
   const [activeId, setActiveId] = useState<string | null>(null)
   const [tweakCollapsed, setTweakCollapsed] = useState(true)
   const [firestoreReady, setFirestoreReady] = useState(false)
+  const [mobileTab, setMobileTab] = useState<MobileTab>('setup')
 
   // Sign into Firestore once on mount — must complete before any snapshot is opened
   useEffect(() => {
@@ -1256,6 +1336,7 @@ export default function Dashboard({
     setActiveId(entry.id)
     openSnapshot(entry.id)
     openTweak()
+    setMobileTab('preview')
   }
 
   const handleUpdate = useCallback((id: string, company: string, role: string) => {
@@ -1286,14 +1367,49 @@ export default function Dashboard({
     }
   }
 
+  const sidebarContent = (
+    <>
+      <ResumePanel firestoreReady={firestoreReady} />
+      <GitHubPanel firestoreReady={firestoreReady} />
+
+      <div>
+        <SectionLabel>Job Description</SectionLabel>
+        <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
+      </div>
+
+      <div id="history" className="flex flex-col gap-1 min-h-0">
+        <SectionLabel>History</SectionLabel>
+        <div className="flex flex-col gap-1 overflow-y-auto max-h-72">
+          {jdHistory.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <Clock className="w-7 h-7 mb-2" style={{ color: 'var(--border-strong)' }} />
+              <p className="text-xs" style={{ color: 'var(--text-faint)' }}>No jobs yet.</p>
+            </div>
+          ) : (
+            jdHistory.map((entry) => (
+              <JDHistoryItem
+                key={entry.id}
+                entry={entry}
+                active={activeJD?.id === entry.id}
+                onClick={() => { setActiveId(entry.id); openTweak(); setMobileTab('preview') }}
+                onUpdate={handleUpdate}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  )
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
       <ToastContainer />
       <DashboardNavbar user={user} onSignOut={onSignOut ?? (() => {})} onProfile={onProfile ?? (() => {})} onHome={onHome ?? (() => {})} />
 
-      <div className="flex-1 max-w-350 w-full mx-auto px-4 sm:px-6 py-6 flex gap-5">
+      {/* ── Desktop layout (sm+) ──────────────────────────────── */}
+      <div className="hidden sm:flex flex-1 max-w-350 w-full mx-auto px-4 sm:px-6 py-6 gap-5">
 
-        {/* ── Left sidebar: resume + github + jd + history ─────── */}
+        {/* Left sidebar */}
         {!tweakCollapsed ? (
           <aside
             id="left-sidebar-collapsed"
@@ -1311,44 +1427,16 @@ export default function Dashboard({
           </aside>
         ) : (
           <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4">
-            <ResumePanel firestoreReady={firestoreReady} />
-            <GitHubPanel firestoreReady={firestoreReady} />
-
-            <div>
-              <SectionLabel>Job Description</SectionLabel>
-              <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
-            </div>
-
-            <div id="history" className="flex flex-col gap-1 min-h-0">
-              <SectionLabel>History</SectionLabel>
-              <div className="flex flex-col gap-1 overflow-y-auto max-h-72">
-                {jdHistory.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <Clock className="w-7 h-7 mb-2" style={{ color: 'var(--border-strong)' }} />
-                    <p className="text-xs" style={{ color: 'var(--text-faint)' }}>No jobs yet.</p>
-                  </div>
-                ) : (
-                  jdHistory.map((entry) => (
-                    <JDHistoryItem
-                      key={entry.id}
-                      entry={entry}
-                      active={activeJD?.id === entry.id}
-                      onClick={() => { setActiveId(entry.id); openTweak() }}
-                      onUpdate={handleUpdate}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
+            {sidebarContent}
           </aside>
         )}
 
-        {/* ── Center: PDF viewer ───────────────────────────────── */}
+        {/* Center: PDF viewer */}
         <main id="resume-panel" className="flex-1 flex flex-col gap-4 min-w-0">
           <ResumeViewer jd={activeJD} userEmail={user?.email ?? ''} />
         </main>
 
-        {/* ── Right: Tweak panel ────────────────────────────────── */}
+        {/* Right: Tweak panel */}
         {activeJD && (
           <TweakPanel
             jd={activeJD}
@@ -1357,7 +1445,65 @@ export default function Dashboard({
             onToggleCollapse={() => tweakCollapsed ? openTweak() : closeTweak()}
           />
         )}
+      </div>
 
+      {/* ── Mobile layout (<sm) ───────────────────────────────── */}
+      <div className="flex sm:hidden flex-1 flex-col min-h-0">
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto px-3 py-4">
+          {mobileTab === 'setup' && (
+            <div className="flex flex-col gap-4">
+              {sidebarContent}
+            </div>
+          )}
+          {mobileTab === 'preview' && (
+            <div className="flex flex-col gap-4 h-full min-h-[60vh]">
+              <ResumeViewer jd={activeJD} userEmail={user?.email ?? ''} />
+            </div>
+          )}
+          {mobileTab === 'tweak' && (
+            <div className="flex flex-col gap-4">
+              {activeJD ? (
+                <MobileTweakContent
+                  jd={activeJD}
+                  onTweak={handleTweak}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <Sparkles className="w-8 h-8 mb-3" style={{ color: 'var(--border-strong)' }} />
+                  <p className="text-sm" style={{ color: 'var(--text-faint)' }}>Select a job first to tweak your resume.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Mobile bottom tab bar */}
+        <nav
+          className="shrink-0 border-t flex items-stretch"
+          style={{ background: 'var(--navbar-bg)', borderColor: 'var(--border)' }}
+        >
+          {([
+            { id: 'setup', label: 'Setup', icon: <LayoutList className="w-5 h-5" /> },
+            { id: 'preview', label: 'Preview', icon: <Eye className="w-5 h-5" /> },
+            { id: 'tweak', label: 'Tweak', icon: <Wand2 className="w-5 h-5" /> },
+          ] as { id: MobileTab; label: string; icon: React.ReactNode }[]).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setMobileTab(tab.id)}
+              className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition-colors"
+              style={{
+                color: mobileTab === tab.id ? 'var(--accent)' : 'var(--text-faint)',
+                background: 'transparent',
+                border: 'none',
+              }}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </nav>
       </div>
     </div>
   )
