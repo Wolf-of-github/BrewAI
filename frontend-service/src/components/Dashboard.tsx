@@ -1173,20 +1173,34 @@ export default function Dashboard({
       (snap) => {
         if (!snap.exists()) return
         const data = snap.data()!
+        // Handle both initial state and transitions — tweak path can complete
+        // before the listener is registered, so we must act on first fire too.
         if (data.status === 'completed') {
-          setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
-            ...e,
-            status: 'done',
-            gcs_url: '',
-            ...(data.company ? { company: data.company } : {}),
-            ...(data.role ? { role: data.role } : {}),
-          } : e))
+          const safetyRejected = data.error === 'Input failed safety check'
+          if (safetyRejected) {
+            // Tweak was rejected by safety check — draft restored to completed,
+            // remove the bad instruction from local state and notify user.
+            setJdHistory((prev) => prev.map((e) => e.id === draftId
+              ? { ...e, status: 'done', instructions: e.instructions.slice(0, -1) }
+              : e
+            ))
+            showToast('Your tweak was flagged as unsafe. Please rephrase and try again.')
+          } else {
+            setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
+              ...e,
+              status: 'done',
+              gcs_url: '',
+              ...(data.company ? { company: data.company } : {}),
+              ...(data.role ? { role: data.role } : {}),
+            } : e))
+          }
           unsubscribe()
         } else if (data.status === 'failed') {
           setJdHistory((prev) => prev.map((e) => e.id === draftId ? { ...e, status: 'failed' } : e))
           showToast('Resume generation failed. Please try re-submitting the job description.')
           unsubscribe()
         }
+        // 'processing' / 'running' — keep listening
       },
       (err) => {
         console.error('[openSnapshot] Firestore subscription error:', err)
@@ -1237,12 +1251,16 @@ export default function Dashboard({
   async function handleTweak(draftId: string, instruction: string) {
     try {
       await apiTailorResume('', instruction, draftId)
+      // Set processing first, then open snapshot — so snapshot completion
+      // always overwrites processing, never the other way around.
       setJdHistory((prev) => prev.map((e) => e.id === draftId ? {
         ...e,
         status: 'processing',
         instructions: [...e.instructions, instruction],
       } : e))
-      openSnapshot(draftId)
+      // Use setTimeout(0) to ensure the processing state is committed before
+      // the snapshot potentially fires synchronously with a completed status.
+      setTimeout(() => openSnapshot(draftId), 0)
     } catch (err) {
       console.error('[handleTweak] failed:', err)
       const msg = (err as Error).message
@@ -1301,7 +1319,7 @@ export default function Dashboard({
                       key={entry.id}
                       entry={entry}
                       active={activeJD?.id === entry.id}
-                      onClick={() => setActiveId(entry.id)}
+                      onClick={() => { setActiveId(entry.id); openTweak() }}
                       onUpdate={handleUpdate}
                     />
                   ))
