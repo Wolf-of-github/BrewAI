@@ -1166,20 +1166,28 @@ export default function Dashboard({
   //   window.location.href = url
   // }
 
-  function openSnapshot(draftId: string) {
+  // waitForChange=true: skip the first snapshot fire (draft was already completed
+  // before this call — we need to wait for the next real state transition).
+  function openSnapshot(draftId: string, waitForChange = false) {
     const draftRef = doc(db, 'drafts', draftId)
+    let firstFire = true
     const unsubscribe = onSnapshot(
       draftRef,
       (snap) => {
         if (!snap.exists()) return
         const data = snap.data()!
-        // Handle both initial state and transitions — tweak path can complete
-        // before the listener is registered, so we must act on first fire too.
+
+        // Skip the very first fire when we know the doc is already completed
+        // and we're waiting for the genai job to produce a new transition.
+        if (firstFire && waitForChange) {
+          firstFire = false
+          return
+        }
+        firstFire = false
+
         if (data.status === 'completed') {
           const safetyRejected = data.error === 'Input failed safety check'
           if (safetyRejected) {
-            // Tweak was rejected by safety check — draft restored to completed,
-            // remove the bad instruction from local state and notify user.
             setJdHistory((prev) => prev.map((e) => e.id === draftId
               ? { ...e, status: 'done', instructions: e.instructions.slice(0, -1) }
               : e
@@ -1196,8 +1204,9 @@ export default function Dashboard({
           }
           unsubscribe()
         } else if (data.status === 'failed') {
+          const errMsg = data.error as string | undefined
           setJdHistory((prev) => prev.map((e) => e.id === draftId ? { ...e, status: 'failed' } : e))
-          showToast('Resume generation failed. Please try re-submitting the job description.')
+          showToast(errMsg ?? 'Resume generation failed. Please try re-submitting the job description.')
           unsubscribe()
         }
         // 'processing' / 'running' — keep listening
@@ -1260,7 +1269,7 @@ export default function Dashboard({
       } : e))
       // Use setTimeout(0) to ensure the processing state is committed before
       // the snapshot potentially fires synchronously with a completed status.
-      setTimeout(() => openSnapshot(draftId), 0)
+      setTimeout(() => openSnapshot(draftId, true), 0)
     } catch (err) {
       console.error('[handleTweak] failed:', err)
       const msg = (err as Error).message
