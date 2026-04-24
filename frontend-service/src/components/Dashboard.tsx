@@ -3,7 +3,7 @@ import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteRes
 import { db, auth, signInToFirestore } from '../lib/firebase'
 import { doc, onSnapshot } from 'firebase/firestore'
 import {
-  Github,
+  GithubIcon as Github,
   FileText,
   Plus,
   Trash2,
@@ -111,7 +111,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 // Resume Upload Panel
-function ResumePanel() {
+function ResumePanel({ firestoreReady }: { firestoreReady: boolean }) {
   const [resume, setResume] = useState<ResumeFile | null>(null)
   const [loading, setLoading] = useState(true)
   // 'idle' | 'uploading' | 'parsing'
@@ -192,6 +192,7 @@ function ResumePanel() {
 
     try {
       await apiUploadResume(file)
+      if (!firestoreReady) throw new Error('Firestore not ready')
       const userId = auth.currentUser?.uid
       if (!userId) throw new Error('Not authenticated')
       const uploadedAt = new Date().toLocaleDateString()
@@ -313,30 +314,69 @@ function ResumePanel() {
 }
 
 // GitHub Connect Panel
-function GitHubPanel() {
+function GitHubPanel({ firestoreReady }: { firestoreReady: boolean }) {
   const [saved, setSaved] = useState<string | null>(null)
-  const [loadingCallback, setLoadingCallback] = useState(false)
+  const [processing, setProcessing] = useState(false)
+  const [reposFound, setReposFound] = useState<number | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
+  const unsubRef = useRef<(() => void) | null>(null)
+
+  function subscribeToGithubStatus(userId: string) {
+    unsubRef.current?.()
+    setProcessing(true)
+    const unsub = onSnapshot(
+      doc(db, 'githubReadmes', userId),
+      (snap) => {
+        if (!snap.exists()) return
+        const data = snap.data()
+        const repos = data?.reposFound as number | undefined
+        unsub()
+        unsubRef.current = null
+        setReposFound(repos ?? 0)
+        setProcessing(false)
+      },
+      (err) => {
+        console.error('[GitHubPanel] pipeline snapshot error:', err)
+        unsubRef.current = null
+        setProcessing(false)
+        showToast('Could not track GitHub processing status. Please refresh.')
+      }
+    )
+    unsubRef.current = unsub
+  }
 
   useEffect(() => {
-    apiGetGithubStatus().then(({ github_id }: { github_id: string | null }) => {
-      if (github_id) setSaved(github_id)
-    }).catch(() => {})
+    apiGetGithubStatus()
+      .then(({ github_id }: { github_id: string | null }) => {
+        if (github_id) setSaved(github_id)
+      })
+      .catch(() => showToast('Failed to load GitHub status. Please refresh.'))
 
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
     if (code) {
       window.history.replaceState({}, '', window.location.pathname)
-      setLoadingCallback(true)
+      setProcessing(true)
       handleGithubCallback(code)
-        .then(({ github_id }) => setSaved(github_id))
+        .then(({ github_id }) => {
+          setSaved(github_id)
+          if (firestoreReady) {
+            const userId = auth.currentUser?.uid
+            if (userId) subscribeToGithubStatus(userId)
+            else setProcessing(false)
+          } else {
+            setProcessing(false)
+          }
+        })
         .catch((err) => {
           console.error('[GitHubPanel] OAuth callback failed:', err)
+          setProcessing(false)
           showToast('Failed to connect GitHub. Please try again.')
         })
-        .finally(() => setLoadingCallback(false))
     }
-  }, [])
+
+    return () => { unsubRef.current?.() }
+  }, [firestoreReady])
 
   async function connectWithGithub() {
     try {
@@ -348,6 +388,8 @@ function GitHubPanel() {
     }
   }
 
+  const statusLabel = processing ? 'Reading repos…' : reposFound !== null ? `${reposFound} repo${reposFound !== 1 ? 's' : ''} indexed` : 'Connected'
+
   return (
     <div
       id="github-panel"
@@ -356,32 +398,34 @@ function GitHubPanel() {
     >
       <SectionLabel>GitHub</SectionLabel>
 
-      {loadingCallback ? (
+      {saved ? (
         <div
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl border"
           style={{ borderColor: 'var(--blue-border)', background: 'var(--blue-subtle)' }}
         >
-          <Github className="w-4 h-4 shrink-0 animate-pulse" style={{ color: 'var(--text-muted)' }} />
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Connecting…</p>
-        </div>
-      ) : saved ? (
-        <div
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl border"
-          style={{ borderColor: 'var(--blue-border)', background: 'var(--blue-subtle)' }}
-        >
-          <Github className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
+          {processing ? (
+            <svg className="w-4 h-4 shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          ) : (
+            <Github className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
+          )}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>@{saved}</p>
-            <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>Connected</p>
+            <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{statusLabel}</p>
           </div>
-          <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />
+          {!processing && <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
           <button
-            disabled={disconnecting}
+            disabled={disconnecting || processing}
             onClick={async () => {
               setDisconnecting(true)
               try {
                 await apiDisconnectGithub()
                 setSaved(null)
+                setReposFound(null)
+                unsubRef.current?.()
+                unsubRef.current = null
               } catch (err) {
                 console.error('[GitHubPanel] disconnect failed:', err)
                 showToast('Failed to disconnect GitHub. Please try again.')
@@ -389,7 +433,7 @@ function GitHubPanel() {
                 setDisconnecting(false)
               }
             }}
-            className="text-[10px] transition-colors"
+            className="text-[10px] transition-colors disabled:opacity-40"
             style={{ color: 'var(--text-faint)' }}
             onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--accent)'}
             onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
@@ -397,15 +441,22 @@ function GitHubPanel() {
             {disconnecting ? 'Disconnecting…' : 'Disconnect'}
           </button>
         </div>
+      ) : processing ? (
+        <div
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl border"
+          style={{ borderColor: 'var(--blue-border)', background: 'var(--blue-subtle)' }}
+        >
+          <svg className="w-4 h-4 shrink-0 animate-spin" style={{ color: 'var(--text-muted)' }} viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Connecting…</p>
+        </div>
       ) : (
         <button
           onClick={connectWithGithub}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm transition-all"
-          style={{
-            borderColor: 'var(--blue-border)',
-            background: 'var(--blue-subtle)',
-            color: 'var(--text-muted)',
-          }}
+          style={{ borderColor: 'var(--blue-border)', background: 'var(--blue-subtle)', color: 'var(--text-muted)' }}
           onMouseEnter={(e) => {
             (e.currentTarget as HTMLElement).style.background = 'var(--blue-muted)'
             ;(e.currentTarget as HTMLElement).style.color = 'var(--text-primary)'
@@ -762,11 +813,9 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
       console.error('[JDInput] tailor failed:', err)
       const msg = (err as Error).message
       showToast(
-        msg.includes('429') || msg.toLowerCase().includes('limit') || msg.toLowerCase().includes('all') && msg.toLowerCase().includes('brew')
-          ? msg  // use the server message directly — it's already user-friendly
-          : msg.includes('400')
-          ? 'Please paste a valid job description.'
-          : 'Failed to start brew. Please try again.'
+        msg.includes('500') || msg.includes('502') || msg.includes('503')
+          ? 'Failed to start brew. Please try again.'
+          : msg  // server messages are user-friendly for 400, 429, etc.
       )
     } finally {
       setSubmitting(false)
@@ -1096,6 +1145,15 @@ export default function Dashboard({
   const [jdHistory, setJdHistory] = useState<JDEntry[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [tweakCollapsed, setTweakCollapsed] = useState(true)
+  const [firestoreReady, setFirestoreReady] = useState(false)
+
+  // Sign into Firestore once on mount — must complete before any snapshot is opened
+  useEffect(() => {
+    getFirebaseToken()
+      .then(({ token }) => signInToFirestore(token))
+      .then(() => setFirestoreReady(true))
+      .catch(() => setFirestoreReady(true)) // allow degraded mode
+  }, [])
 
   // Derive activeJD from jdHistory — snapshot updates flow through automatically, no stale closures
   const activeJD = jdHistory.find((e) => e.id === activeId) ?? null
@@ -1162,13 +1220,8 @@ export default function Dashboard({
   }
 
   useEffect(() => {
-    getFirebaseToken()
-      .then(({ token }) => signInToFirestore(token))
-      .then(() => {
-        return fetchHistory()
-      })
-      .catch(() => fetchHistory())
-  }, [])
+    if (firestoreReady) fetchHistory()
+  }, [firestoreReady])
 
   function addJD(entry: JDEntry) {
     setJdHistory((prev) => [entry, ...prev])
@@ -1226,8 +1279,8 @@ export default function Dashboard({
           </aside>
         ) : (
           <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4">
-            <ResumePanel />
-            <GitHubPanel />
+            <ResumePanel firestoreReady={firestoreReady} />
+            <GitHubPanel firestoreReady={firestoreReady} />
 
             <div>
               <SectionLabel>Job Description</SectionLabel>
