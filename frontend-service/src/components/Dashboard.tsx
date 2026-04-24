@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getGithubOAuthUrl, handleGithubCallback, disconnectGithub as apiDisconnectGithub, updateTailoredJob, recordDownload, getFirebaseToken } from '../lib/api'
-import { db, signInToFirestore } from '../lib/firebase'
+import { db, auth, signInToFirestore } from '../lib/firebase'
 import { doc, onSnapshot } from 'firebase/firestore'
 import {
   Github,
@@ -112,69 +112,118 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 // Resume Upload Panel
 function ResumePanel() {
-  const [resumes, setResumes] = useState<ResumeFile[]>([])
+  const [resume, setResume] = useState<ResumeFile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
+  // 'idle' | 'uploading' | 'parsing'
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'parsing'>('idle')
   const fileRef = useRef<HTMLInputElement>(null)
-  const MAX = 1
+  const unsubRef = useRef<(() => void) | null>(null)
 
-  function fetchResumes() {
-    return apiFetch<{ resumes: Array<{ fileId: string; originalName: string; uploadedAt: string | null }> }>('/resume/list')
-      .then(({ resumes: data }) => {
-        setResumes(data.map((r, i) => ({
-          id: r.fileId,
-          name: r.originalName,
-          size: '',
-          uploadedAt: r.uploadedAt ? new Date(r.uploadedAt).toLocaleDateString() : 'Unknown',
-          active: i === 0,
-        })))
-      })
+  // Subscribe to parsedResumes/{userId} snapshot to know when parsing completes
+  function subscribeToParseStatus(userId: string, uploadedName: string, uploadedAt: string) {
+    // Unsubscribe any previous listener
+    unsubRef.current?.()
+    setUploadState('parsing')
+
+    const unsub = onSnapshot(
+      doc(db, 'parsedResumes', userId),
+      (snap) => {
+        if (!snap.exists()) return
+        const data = snap.data()
+        const status = data?.status as string | undefined
+
+        if (status === 'success') {
+          unsub()
+          unsubRef.current = null
+          setResume({
+            id: data.fileId ?? userId,
+            name: uploadedName,
+            size: '',
+            uploadedAt,
+            active: true,
+          })
+          setUploadState('idle')
+        } else if (status === 'rejected') {
+          unsub()
+          unsubRef.current = null
+          setResume(null)
+          setUploadState('idle')
+          showToast('Resume rejected. Please upload a valid PDF or DOCX with readable text.')
+        }
+      },
+      (err) => {
+        console.error('[ResumePanel] snapshot error:', err)
+        unsubRef.current = null
+        setUploadState('idle')
+        showToast('Failed to track resume status. Please refresh.')
+      }
+    )
+    unsubRef.current = unsub
   }
 
+  // Initial load — fetch existing resume from API
   useEffect(() => {
-    fetchResumes().finally(() => setLoading(false))
+    apiFetch<{ resumes: Array<{ fileId: string; originalName: string; uploadedAt: string | null }> }>('/resume/list')
+      .then(({ resumes: data }) => {
+        if (data.length > 0) {
+          const r = data[0]
+          setResume({
+            id: r.fileId,
+            name: r.originalName,
+            size: '',
+            uploadedAt: r.uploadedAt ? new Date(r.uploadedAt).toLocaleDateString() : 'Unknown',
+            active: true,
+          })
+        }
+      })
+      .catch(() => showToast('Failed to load resume. Please refresh.'))
+      .finally(() => setLoading(false))
+
+    return () => { unsubRef.current?.() }
   }, [])
 
   async function handleFiles(files: FileList | null) {
-    if (!files || uploading) return
+    if (!files || uploadState !== 'idle') return
     const file = files[0]
-    setUploading(true)
+
+    // Clear existing resume immediately
+    setResume(null)
+    setUploadState('uploading')
+
     try {
       await apiUploadResume(file)
-      await fetchResumes()
+      const userId = auth.currentUser?.uid
+      if (!userId) throw new Error('Not authenticated')
+      const uploadedAt = new Date().toLocaleDateString()
+      subscribeToParseStatus(userId, file.name, uploadedAt)
     } catch (err) {
       console.error('[ResumePanel] upload failed:', err)
       const msg = (err as Error).message
+      setUploadState('idle')
       showToast(
-        msg === 'HTTP 413' ? 'File too large. Please upload a resume under 10MB.' :
-        msg === 'HTTP 415' ? 'Unsupported file type. Please upload a PDF or DOCX.' :
+        msg.includes('413') ? 'File too large. Please upload a resume under 10MB.' :
+        msg.includes('415') ? 'Unsupported file type. Please upload a PDF or DOCX.' :
         'Resume upload failed. Please try again.'
       )
     } finally {
-      setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
     }
   }
 
-  function setActive(id: string) {
-    setResumes((prev) => prev.map((r) => ({ ...r, active: r.id === id })))
-  }
-
-  async function remove(id: string) {
+  async function remove() {
     try {
       await apiDeleteResume()
-      setResumes((prev) => {
-        const next = prev.filter((r) => r.id !== id)
-        if (next.length > 0 && !next.some((r) => r.active)) {
-          next[0].active = true
-        }
-        return next
-      })
+      setResume(null)
+      unsubRef.current?.()
+      unsubRef.current = null
     } catch (err) {
       console.error('[ResumePanel] delete failed:', err)
       showToast('Failed to delete resume. Please try again.')
     }
   }
+
+  const isBusy = uploadState !== 'idle'
+  const statusLabel = uploadState === 'uploading' ? 'Uploading…' : uploadState === 'parsing' ? 'Parsing…' : 'Upload resume'
 
   return (
     <div
@@ -182,49 +231,38 @@ function ResumePanel() {
       className="rounded-2xl border p-5"
       style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
     >
-      <SectionLabel>Resume ({resumes.length}/{MAX})</SectionLabel>
+      <SectionLabel>Resume (1 max)</SectionLabel>
 
       <div className="flex flex-col gap-2 mb-4">
         {loading ? (
-          <div className="flex flex-col gap-2">
-            {[1, 2].map((i) => (
-              <div key={i} className="h-10 rounded-xl animate-pulse" style={{ background: 'var(--blue-subtle)' }} />
-            ))}
-          </div>
-        ) : resumes.map((r) => (
+          <div className="h-10 rounded-xl animate-pulse" style={{ background: 'var(--blue-subtle)' }} />
+        ) : isBusy ? (
+          // Spinner while uploading or parsing
           <div
-            key={r.id}
-            onClick={() => setActive(r.id)}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all"
-            style={r.active ? {
-              borderColor: 'var(--accent-border)',
-              background: 'var(--accent-subtle)',
-              boxShadow: '0 1px 4px var(--shadow-accent)',
-            } : {
-              borderColor: 'var(--border)',
-              background: 'transparent',
-            }}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl border"
+            style={{ borderColor: 'var(--accent-border)', background: 'var(--accent-subtle)' }}
           >
-            <FileText
-              className="w-4 h-4 shrink-0"
-              style={{ color: r.active ? 'var(--accent)' : 'var(--text-xfaint)' }}
-            />
+            <svg className="w-4 h-4 shrink-0 animate-spin" style={{ color: 'var(--accent)' }} viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            <p className="text-sm" style={{ color: 'var(--accent)' }}>{statusLabel}</p>
+          </div>
+        ) : resume ? (
+          <div
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl border"
+            style={{ borderColor: 'var(--accent-border)', background: 'var(--accent-subtle)', boxShadow: '0 1px 4px var(--shadow-accent)' }}
+          >
+            <FileText className="w-4 h-4 shrink-0" style={{ color: 'var(--accent)' }} />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{r.name}</p>
-              <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-                {r.size} · {r.uploadedAt}
-              </p>
+              <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{resume.name}</p>
+              <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{resume.uploadedAt}</p>
             </div>
-            {r.active && (
-              <span
-                className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                style={{ color: 'var(--accent)', background: 'var(--accent-subtle)' }}
-              >
-                Active
-              </span>
-            )}
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--accent)', background: 'var(--accent-subtle)' }}>
+              Active
+            </span>
             <button
-              onClick={(e) => { e.stopPropagation(); remove(r.id) }}
+              onClick={() => remove()}
               className="transition-colors"
               style={{ color: 'var(--text-xfaint)' }}
               onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = '#f87171'}
@@ -233,10 +271,10 @@ function ResumePanel() {
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
-        ))}
+        ) : null}
       </div>
 
-      {resumes.length < 1 ? (
+      {!resume && !isBusy && (
         <>
           <input
             ref={fileRef}
@@ -247,7 +285,7 @@ function ResumePanel() {
           />
           <button
             onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            disabled={isBusy}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ borderColor: 'var(--blue-border)', color: 'var(--text-faint)' }}
             onMouseEnter={(e) => {
@@ -260,10 +298,12 @@ function ResumePanel() {
             }}
           >
             <Plus className="w-4 h-4" />
-            {uploading ? 'Uploading…' : 'Upload resume'}
+            Upload resume
           </button>
         </>
-      ) : (
+      )}
+
+      {resume && !isBusy && (
         <p className="text-center text-xs py-2" style={{ color: 'var(--text-faint)' }}>
           Maximum 1 resume reached
         </p>
