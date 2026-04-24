@@ -329,9 +329,12 @@ function GitHubPanel({ firestoreReady }: { firestoreReady: boolean }) {
   function subscribeToGithubStatus(userId: string) {
     unsubRef.current?.()
     setProcessing(true)
+    let firstFire = true
     const unsub = onSnapshot(
       doc(db, 'githubReadmes', userId),
       (snap) => {
+        // Skip first fire — doc may exist from a previous connect, wait for new pipeline write
+        if (firstFire) { firstFire = false; return }
         if (!snap.exists()) return
         const data = snap.data()
         const repos = data?.reposFound as number | undefined
