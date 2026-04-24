@@ -675,7 +675,12 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
   useEffect(() => {
     if (!jd) return
     if (jd.status === 'processing') { setHtml(null); setError(null); return }
-    if (jd.status === 'failed') { setHtml(null); setError('Resume generation failed. Please try re-submitting the job description.'); return }
+    if (jd.status === 'failed') {
+      // Don't clear html — keep showing last good resume so user isn't left with a blank screen.
+      // The toast is already shown by the snapshot handler.
+      setError(null)
+      return
+    }
     let cancelled = false
     setLoading(true)
     setHtml(null)
@@ -1104,7 +1109,7 @@ function TweakPanel({
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-            placeholder={jd?.status === 'done' ? 'Prompt to tweak resume, kindly be specific with your requests 😊 (Max 5 tweaks)' : 'Select a completed draft to tweak'}
+            placeholder={jd?.status === 'done' ? 'Prompt to tweak resume, kindly be specific with your requests 😊 (Max 4 tweaks)' : 'Select a completed draft to tweak'}
             rows={3}
             disabled={isDisabled}
             className="w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none resize-none disabled:opacity-40 disabled:cursor-not-allowed"
