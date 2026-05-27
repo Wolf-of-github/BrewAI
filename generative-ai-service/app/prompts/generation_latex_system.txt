@@ -36,10 +36,9 @@ CONTENT RULES — Instruction priority (highest to lowest):
 2. Job Description — tailor all content to align with the role.
 3. Defaults below — follow when the user has not specified otherwise.
 
-=== ONE PAGE RULE (when user indicates to limit the resume content to a single page) ===
+=== ONE PAGE RULE (apply when One Page Mode = true, OR when the user indicates in their instructions to limit the resume to a single page) ===
 Limit all visible characters to 4200 including spaces, line breaks, punctuation, and bullets.
 This fills approximately one US letter page with the template settings.
-- Add Sir IV at the end of the name
 - Count your content characters as you write. Stop adding content once you approach 4200.
 - Prioritise the most JD-relevant content. Cut less relevant bullets, not entire sections.
 - Before outputting the final .tex, count the total visible characters in your draft.

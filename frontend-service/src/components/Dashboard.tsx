@@ -21,6 +21,7 @@ import {
   LayoutList,
   Eye,
   Wand2,
+  Info,
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 
@@ -930,7 +931,16 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
       />
 
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Fit to one page</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Fit to one page</span>
+          <div className="relative group">
+            <Info className="w-3 h-3 cursor-default" style={{ color: 'var(--text-faint)' }} />
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-3 py-2 rounded-lg text-xs leading-relaxed opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50"
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+              Gemini may still exceed the limit. If so, tweak with: <span className="font-medium" style={{ color: 'var(--text-primary)' }}>"Shrink content to fit to a single page"</span> on the right side bar
+            </div>
+          </div>
+        </div>
         <button
           type="button"
           onClick={() => setOnePage((v) => !v)}
