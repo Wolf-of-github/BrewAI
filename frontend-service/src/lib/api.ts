@@ -1,5 +1,5 @@
 const API_GATEWAY =
-  import.meta.env.VITE_API_GATEWAY_URL ?? 'https://api-gateway-service-nxyvtmg2na-uc.a.run.app'
+  import.meta.env.VITE_API_GATEWAY_URL ?? 'https://api-gateway-service-3y3dwbqy2q-uc.a.run.app'
 
 async function getErrorMessage(res: Response): Promise<string> {
   const body = await res.json().catch(() => null)
@@ -41,7 +41,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   return res.json()
 }
 
-export async function getGithubStatus(): Promise<{ github_id: string | null }> {
+export async function getGithubStatus(): Promise<{ github_id: string | null; status: string | null; repos_found: number | null }> {
   return apiFetch('/github-id/status')
 }
 
@@ -71,7 +71,8 @@ export async function getTailoredContent(draftId: string): Promise<string> {
   if (!res.ok) {
     throw new Error(await getErrorMessage(res))
   }
-  return res.text()
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
 }
 
 export async function tailorResume(jdText: string, userInstructions: string = "", draftId?: string): Promise<{ draft_id: string; company: string; role: string }> {
@@ -93,7 +94,7 @@ export async function disconnectGithub(): Promise<{ ack: boolean }> {
   return apiFetch('/github/disconnect', { method: 'DELETE' })
 }
 
-export async function handleGithubCallback(code: string): Promise<{ ack: boolean; github_id: string }> {
+export async function handleGithubCallback(code: string): Promise<{ ack: boolean; github_id: string; run_id: string }> {
   return apiFetch('/github/oauth/callback', {
     method: 'POST',
     body: JSON.stringify({ code }),
@@ -154,7 +155,7 @@ export async function sendContactEmail(email: string, body: string, subject?: st
 
 export async function getFirebaseToken(): Promise<{ token: string }> {
   const token = getToken()
-  const AUTH_SERVICE = import.meta.env.VITE_AUTH_SERVICE_URL ?? 'https://auth-service-nxyvtmg2na-uc.a.run.app'
+  const AUTH_SERVICE = import.meta.env.VITE_AUTH_SERVICE_URL ?? 'https://auth-service-3y3dwbqy2q-uc.a.run.app'
   const res = await fetch(`${AUTH_SERVICE}/auth/firebase-token`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},

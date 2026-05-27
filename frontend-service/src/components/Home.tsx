@@ -103,7 +103,7 @@ export default function Home() {
             style={{ background: 'var(--accent-subtle)' }} />
         </div>
 
-        <div className="relative max-w-3xl mx-auto px-6 pt-28 pb-20 text-center">
+        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 pt-20 sm:pt-28 pb-16 sm:pb-20 text-center">
           <div
             className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border mb-8"
             style={{
@@ -117,16 +117,16 @@ export default function Home() {
           </div>
 
           <h1
-            className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-6"
+            className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-6"
             style={{ color: 'var(--text-primary)' }}
           >
-            One resume.{' '}
+            Just One Resume!{' '}
             <span className="text-transparent bg-clip-text bg-linear-to-r from-[#4A6FA5] to-[#F59E0B]">
               Every role.
             </span>
           </h1>
 
-          <p className="text-lg max-w-md mx-auto mb-12 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-base sm:text-lg max-w-md mx-auto mb-10 sm:mb-12 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
             Stop rewriting your resume for every job. Just upload and let it{' '}
             <span
               className="relative inline-block font-bold px-2 py-0.5 rounded-md bg-linear-to-r from-[#4A6FA5] to-[#F59E0B]"
@@ -163,12 +163,12 @@ export default function Home() {
       </section>
 
       {/* How it works — vertical flow */}
-      <section id="how" className="max-w-2xl mx-auto px-6 pb-32 pt-8">
+      <section id="how" className="max-w-2xl mx-auto px-4 sm:px-6 pb-20 sm:pb-32 pt-8">
         <div className="text-center mb-16">
           <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--accent)' }}>
             How it works
           </p>
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+          <h2 className="text-2xl sm:text-4xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
             Four steps. That's it.
           </h2>
         </div>
@@ -213,8 +213,8 @@ export default function Home() {
 
       {/* CTA */}
       <section id="cta" className="border-t" style={{ borderColor: 'var(--border)' }}>
-        <div className="max-w-2xl mx-auto px-6 py-24 text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3" style={{ color: 'var(--text-primary)' }}>
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
+          <h2 className="text-2xl sm:text-4xl font-bold tracking-tight mb-3" style={{ color: 'var(--text-primary)' }}>
             Ready to apply smarter?
           </h2>
           <p className="mb-10" style={{ color: 'var(--text-muted)' }}>

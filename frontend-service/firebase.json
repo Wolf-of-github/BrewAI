@@ -10,6 +10,6 @@
     ]
   },
   "firestore": {
-    "rules": "../infra/modules/firestore/firestore.rules"
+    "rules": "firestore.rules"
   }
 }

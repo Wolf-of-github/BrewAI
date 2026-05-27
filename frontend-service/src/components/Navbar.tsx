@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sun, Moon } from 'lucide-react'
 import { signInWithGoogle, getCookieUser } from '../lib/firebase'
@@ -6,14 +7,20 @@ import { useTheme } from '../context/ThemeContext'
 export default function Navbar() {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
+  const [loading, setLoading] = useState(false)
 
   async function handleSignIn() {
     if (getCookieUser()) {
       navigate('/dashboard')
       return
     }
-    await signInWithGoogle()
-    navigate('/dashboard')
+    setLoading(true)
+    try {
+      await signInWithGoogle()
+      navigate('/dashboard')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -24,7 +31,7 @@ export default function Navbar() {
         borderColor: 'var(--border)',
       }}
     >
-      <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
         <button
           id="home-button"
           onClick={() => navigate('/')}
@@ -51,13 +58,14 @@ export default function Navbar() {
 
           <button
             onClick={handleSignIn}
-            className="text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            disabled={loading}
+            className="text-sm font-medium px-4 py-2 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
               background: 'var(--accent)',
               color: 'var(--accent-text)',
             }}
           >
-            Sign In
+            {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </div>
       </div>

@@ -1,0 +1,138 @@
+BrewAI Observability Plan
+=========================
+
+
+OVERVIEW
+--------
+
+Two tools, working in tandem:
+
+  PostHog           - answers "what did the user do?" (clicks, funnels, session replay)
+  GCP Cloud Logging - answers "what did the system do?" (errors, latency, stack traces)
+  Correlation ID    - the glue that links both together for a single request
+
+
+HOW IT WORKS
+------------
+
+  1. User clicks something in the browser
+  2. PostHog autocaptures the click
+  3. API Gateway receives the request, generates a correlationId, logs it to GCP
+  4. API Gateway forwards the request to the relevant backend service, passing the correlationId as a header
+  5. Backend service logs each step to GCP (start, finish, error) with the same correlationId
+  6. Frontend receives the response and fires a custom PostHog event with the correlationId attached
+
+When a user reports an issue:
+  - Find their session in PostHog -> grab the correlationId
+  - Search GCP Logging by that correlationId -> see every log line across all services for that exact request
+
+
+THE TOOLS
+---------
+
+PostHog (posthog.com)
+  - Installed on the frontend as a small JS library
+  - Autocaptures all clicks, page views, and navigation automatically
+  - You also fire custom events manually at key moments (GitHub connected, resume generated, etc.)
+  - Gives you: user funnels, session replays, retention charts, custom dashboards
+
+GCP Cloud Logging
+  - Already built into Cloud Run - your services just need to print structured JSON to stdout
+  - GCP captures it automatically, indexes every field, lets you filter and search
+  - Gives you: full request logs, error stack traces, latency per service, alerting
+
+Correlation ID
+  - A unique ID generated at the API Gateway for every incoming request
+  - Passed as a header (x-correlation-id) to every downstream service
+  - Included in every log line and every PostHog event
+  - Links PostHog and GCP Logging together so you can trace one request end to end
+
+
+IMPLEMENTATION PHASES
+---------------------
+
+Phase 1 - Correlation ID (1 hour)
+  File: api-gateway-service/src/index.js
+  - Add middleware to generate a correlationId on every request
+  - Attach it to all downstream HTTP calls as a header
+  - Return it in the response so the frontend can read it
+
+Phase 2 - Structured Logging in all backend services (2-3 hours)
+  Files: api-gateway-service, github-reader-service, genai-service, resume-parser-service
+  - All services print JSON logs to stdout instead of plain text
+  - Every log line includes: severity, message, correlationId, userId, and relevant context
+
+  Key events to log per service:
+    api-gateway     - request_received, routed_to_service, response_sent, error
+    github-reader   - indexing_started, repos_fetched, gcs_write_done, indexing_failed
+    genai-service   - generation_started, draft_written, generation_failed
+    resume-parser   - parse_started, parse_completed, parse_failed
+
+Phase 3 - PostHog Frontend (2.5 hours)
+  File: frontend-service/src/main.tsx and relevant components
+  - Install posthog-js and initialize once on app load
+  - Identify the user after login so all events are tied to their account
+  - Fire custom events at key moments: github_connected, resume_generated, resume_downloaded, errors
+
+Phase 4 - PostHog Backend, optional (1 hour)
+  Files: github-reader-service, genai-service
+  - Install posthog Python SDK
+  - Fire events for async completions that have no frontend callback
+    e.g. github_indexing_completed with repos_indexed and duration_ms
+
+Phase 5 - GCP Dashboard and Alerts (1 hour)
+  - Set up a GCP Cloud Logging dashboard with saved filters per service
+  - Set up an alert for ERROR severity log spikes
+
+
+WHAT YOU GET AFTER
+------------------
+
+  Question                                                        Where to look
+  ---------------------------------------------------------------------------------------------------------------------------------------
+  How many users connected GitHub this week?                      PostHog dashboard
+  What % of users who connect GitHub generate a resume?           PostHog funnel
+  Why did this user's resume generation fail?                     GCP Cloud Logging
+  A user said it was slow - where did time go?                    PostHog (get correlationId) -> GCP Logs (filter by correlationId)
+  Watch exactly what a user did on screen                         PostHog session replay
+  Get alerted when errors spike                                   GCP Cloud Monitoring alert
+
+
+ACCESS REQUIRED FOR THE HIRE
+-----------------------------
+
+GCP Roles:
+  roles/logging.admin       - Cloud Logging
+  roles/cloudtrace.admin    - Cloud Trace
+  roles/monitoring.admin    - Cloud Monitoring
+  roles/run.developer       - Cloud Run (to update env vars if needed)
+
+Codebase (read/write):
+  api-gateway-service
+  github-reader-service
+  generative-ai-service
+  resume-parser-service
+  frontend-service
+
+PostHog:
+  Admin invite to the PostHog project
+
+Do NOT give:
+  GCP Owner role
+  Secret Manager access
+  Firebase console admin
+
+
+ESTIMATED EFFORT
+----------------
+
+  Task                                                Estimate
+  ----------------------------------------------------------
+  Correlation ID middleware in API Gateway            1 hour
+  Structured logging across all 4 backend services    2-3 hours
+  PostHog init + user identify in frontend            30 minutes
+  Custom PostHog events in key components             2 hours
+  PostHog backend capture in async services           1 hour
+  GCP dashboard and alert setup                       1 hour
+  ----------------------------------------------------------
+  Total                                               ~1 day

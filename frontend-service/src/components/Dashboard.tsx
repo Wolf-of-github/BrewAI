@@ -319,42 +319,56 @@ function ResumePanel({ firestoreReady }: { firestoreReady: boolean }) {
 }
 
 // GitHub Connect Panel
-function GitHubPanel({ firestoreReady }: { firestoreReady: boolean }) {
+function GitHubPanel() {
   const [saved, setSaved] = useState<string | null>(null)
   const [processing, setProcessing] = useState(false)
   const [reposFound, setReposFound] = useState<number | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
-  const unsubRef = useRef<(() => void) | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  function subscribeToGithubStatus(userId: string) {
-    unsubRef.current?.()
-    setProcessing(true)
-    const unsub = onSnapshot(
-      doc(db, 'githubReadmes', userId),
-      (snap) => {
-        if (!snap.exists()) return
-        const data = snap.data()
-        // Only resolve when the pipeline explicitly marks status=completed
-        if (data?.status !== 'completed') return
-        unsub()
-        unsubRef.current = null
-        setReposFound((data.reposFound as number) ?? 0)
-        setProcessing(false)
-      },
-      (err) => {
-        console.error('[GitHubPanel] pipeline snapshot error:', err)
-        unsubRef.current = null
-        setProcessing(false)
-        showToast('Could not track GitHub processing status. Please refresh.')
+  function stopPolling() {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }
+
+  function startPolling() {
+    stopPolling()
+    let count = 0
+    const MAX_POLLS = 120 // 10 minutes at 5s intervals
+    pollRef.current = setInterval(async () => {
+      count++
+      try {
+        const { github_id, status, repos_found } = await apiGetGithubStatus()
+        if (status === 'completed') {
+          stopPolling()
+          if (github_id) setSaved(github_id)
+          setReposFound(repos_found ?? 0)
+          setProcessing(false)
+          return
+        }
+      } catch {
+        // ignore transient errors, keep polling
       }
-    )
-    unsubRef.current = unsub
+      if (count >= MAX_POLLS) {
+        stopPolling()
+        setProcessing(false)
+        showToast('GitHub indexing timed out. Please try reconnecting.')
+      }
+    }, 5000)
   }
 
   useEffect(() => {
     apiGetGithubStatus()
-      .then(({ github_id }: { github_id: string | null }) => {
+      .then(({ github_id, status, repos_found }) => {
         if (github_id) setSaved(github_id)
+        if (status === 'completed') {
+          setReposFound(repos_found ?? 0)
+        } else if (status === 'processing') {
+          setProcessing(true)
+          startPolling()
+        }
       })
       .catch(() => showToast('Failed to load GitHub status. Please refresh.'))
 
@@ -366,13 +380,7 @@ function GitHubPanel({ firestoreReady }: { firestoreReady: boolean }) {
       handleGithubCallback(code)
         .then(({ github_id }) => {
           setSaved(github_id)
-          if (firestoreReady) {
-            const userId = auth.currentUser?.uid
-            if (userId) subscribeToGithubStatus(userId)
-            else setProcessing(false)
-          } else {
-            setProcessing(false)
-          }
+          startPolling()
         })
         .catch((err) => {
           console.error('[GitHubPanel] OAuth callback failed:', err)
@@ -381,8 +389,8 @@ function GitHubPanel({ firestoreReady }: { firestoreReady: boolean }) {
         })
     }
 
-    return () => { unsubRef.current?.() }
-  }, [firestoreReady])
+    return () => { stopPolling() }
+  }, [])
 
   async function connectWithGithub() {
     try {
@@ -420,6 +428,7 @@ function GitHubPanel({ firestoreReady }: { firestoreReady: boolean }) {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>@{saved}</p>
             <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{statusLabel}</p>
+            {processing && <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-xfaint)' }}>Processing may take a few minutes…</p>}
           </div>
           {!processing && <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500" />}
           <button
@@ -428,10 +437,10 @@ function GitHubPanel({ firestoreReady }: { firestoreReady: boolean }) {
               setDisconnecting(true)
               try {
                 await apiDisconnectGithub()
+                stopPolling()
                 setSaved(null)
                 setReposFound(null)
-                unsubRef.current?.()
-                unsubRef.current = null
+                setProcessing(false)
               } catch (err) {
                 console.error('[GitHubPanel] disconnect failed:', err)
                 showToast('Failed to disconnect GitHub. Please try again.')
@@ -674,29 +683,29 @@ function BrewCountdown() {
 
 // Resume viewer panel
 function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string }) {
-  const [html, setHtml] = useState<string | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!jd) return
-    if (jd.status === 'processing') { setHtml(null); setError(null); return }
+    if (jd.status === 'processing') { setPdfUrl(null); setError(null); return }
     if (jd.status === 'failed') {
-      // Don't clear html — keep showing last good resume so user isn't left with a blank screen.
+      // Don't clear pdfUrl — keep showing last good resume so user isn't left with a blank screen.
       // The toast is already shown by the snapshot handler.
       setError(null)
       return
     }
     let cancelled = false
     setLoading(true)
-    setHtml(null)
+    setPdfUrl(null)
     setError(null)
 
     async function fetchWithRetry(attempts: number) {
       for (let i = 0; i < attempts; i++) {
         try {
           const res = await getTailoredContent(jd!.id)
-          if (!cancelled) { setHtml(res); setLoading(false) }
+          if (!cancelled) { setPdfUrl(res); setLoading(false) }
           return
         } catch (err) {
           if (i < attempts - 1) {
@@ -742,25 +751,17 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
         </div>
         <button
           onClick={() => {
-            if (!html) return
-            // Inject print CSS to suppress browser-added headers/footers (URL, page numbers, date)
-            const printCss = `<style>@page{margin:0;size:auto;}body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}</style>`
-            const printHtml = html.replace(/<\/head>/i, `${printCss}</head>`)
-            const blob = new Blob([printHtml], { type: 'text/html' })
-            const url = URL.createObjectURL(blob)
-            const win = window.open(url, '_blank')
-            if (!win) {
-              URL.revokeObjectURL(url)
-              showToast('Popups are blocked. Please allow popups for this site to download your resume.')
-              return
-            }
+            if (!pdfUrl) return
             const localEmail = userEmail.split('@')[0]
             const rand = Math.floor(1000 + Math.random() * 9000)
-            const filename = [...[jd.company, jd.role, localEmail].map((s) => s.replace(/\s+/g, '-')), rand].join('—')
-            win.addEventListener('load', () => { win.document.title = filename; win.print(); URL.revokeObjectURL(url) })
+            const filename = [...[jd.company, jd.role, localEmail].map((s) => s.replace(/\s+/g, '-')), rand].join('—') + '.pdf'
+            const a = document.createElement('a')
+            a.href = pdfUrl
+            a.download = filename
+            a.click()
             recordDownload().catch(() => {})
           }}
-          disabled={!html}
+          disabled={!pdfUrl}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
         >
@@ -770,7 +771,7 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div id='content-board' className="flex-1 overflow-y-auto">
         {loading && (
           <div className="flex items-center justify-center h-full py-20">
             <Sparkles className="w-6 h-6 animate-pulse" style={{ color: 'var(--accent)' }} />
@@ -788,7 +789,7 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
             <BrewCountdown />
           </div>
         )}
-        {html && <div dangerouslySetInnerHTML={{ __html: html }} className="w-full h-full" />}
+        {pdfUrl && <iframe src={pdfUrl} className="w-full h-full border-0" title="Resume Preview" />}
       </div>
     </div>
   )
@@ -1371,7 +1372,7 @@ export default function Dashboard({
   const sidebarContent = (
     <>
       <ResumePanel firestoreReady={firestoreReady} />
-      <GitHubPanel firestoreReady={firestoreReady} />
+      <GitHubPanel />
 
       <div>
         <SectionLabel>Job Description</SectionLabel>

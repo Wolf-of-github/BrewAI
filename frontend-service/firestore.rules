@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can only read/write their own user doc
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Users can only read their own draft docs
+    match /drafts/{draftId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow write: if false; // backend only
+    }
+
+    // Users can only read their own parsed resume status
+    match /parsedResumes/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false; // backend only
+    }
+
+    // Users can only read their own GitHub pipeline status
+    match /githubReadmes/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false; // backend only
+    }
+
+    // Temporary debug collection
+    match /testing/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // No client access to anything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

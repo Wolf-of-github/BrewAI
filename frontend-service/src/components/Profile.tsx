@@ -29,7 +29,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number | string }) {
   return (
     <div
-      className="flex-1 flex flex-col gap-1.5 rounded-xl p-4"
+      className="flex flex-col gap-1.5 rounded-xl p-4"
       style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
     >
       <div className="flex items-center gap-2" style={{ color: 'var(--text-faint)' }}>
@@ -51,7 +51,7 @@ function ProfileNavbar({ onBack, onSignOut }: { onBack: () => void; onSignOut: (
       className="sticky top-0 z-50 border-b backdrop-blur-md"
       style={{ background: 'var(--navbar-bg)', borderColor: 'var(--border)' }}
     >
-      <div className="max-w-350 mx-auto px-6 h-14 flex items-center justify-between">
+      <div className="max-w-350 mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
@@ -63,15 +63,15 @@ function ProfileNavbar({ onBack, onSignOut }: { onBack: () => void; onSignOut: (
             <ChevronLeft className="w-4 h-4" />
             Dashboard
           </button>
-          <span style={{ color: 'var(--text-xfaint)' }}>·</span>
-          <div className="flex items-center gap-2">
+          <span className="hidden sm:inline" style={{ color: 'var(--text-xfaint)' }}>·</span>
+          <div className="hidden sm:flex items-center gap-2">
             <img src="/brew.png" alt="Brew AI" className="w-5 h-5 object-contain" />
             <span className="font-semibold tracking-tight text-sm" style={{ color: 'var(--text-primary)' }}>
               Brew AI
             </span>
           </div>
           <span
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
+            className="hidden sm:inline text-[10px] font-semibold px-2 py-0.5 rounded-full border"
             style={{
               color: 'var(--blue)',
               background: 'var(--blue-subtle)',
@@ -176,7 +176,7 @@ export default function Profile({
           style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
         >
           <SectionLabel>Account</SectionLabel>
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3 sm:gap-5 flex-wrap">
             <div
               className="w-14 h-14 rounded-2xl border overflow-hidden flex items-center justify-center shrink-0"
               style={{ background: 'var(--blue-subtle)', borderColor: 'var(--blue-border)' }}
@@ -231,7 +231,7 @@ export default function Profile({
           style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
         >
           <SectionLabel>Usage</SectionLabel>
-          <div className="flex gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard
               icon={<BarChart2 className="w-3.5 h-3.5" />}
               label="Resumes tailored"

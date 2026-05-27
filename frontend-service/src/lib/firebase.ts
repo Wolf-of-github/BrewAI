@@ -3,16 +3,16 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithCustomToken } f
 import { getFirestore } from 'firebase/firestore'
 
 const AUTH_SERVICE_URL =
-  import.meta.env.VITE_AUTH_SERVICE_URL ?? 'https://auth-service-nxyvtmg2na-uc.a.run.app'
+  import.meta.env.VITE_AUTH_SERVICE_URL ?? 'https://auth-service-3y3dwbqy2q-uc.a.run.app'
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDrvL8_5xZBpgzR389CWUz-bvZMommNMCw",
-  authDomain: "brew-prod-492719.firebaseapp.com",
-  projectId: "brew-prod-492719",
-  storageBucket: "brew-prod-492719.firebasestorage.app",
-  messagingSenderId: "450400408594",
-  appId: "1:450400408594:web:be0bbca686cc57c2c574cb",
-  measurementId: "G-GPPTDDTBZQ"
+  apiKey: "AIzaSyB3yITI556E2vpKdUuQZxZbyaDSL07ROVk",
+  authDomain: "brewai-497502.firebaseapp.com",
+  projectId: "brewai-497502",
+  storageBucket: "brewai-497502.firebasestorage.app",
+  messagingSenderId: "267302768077",
+  appId: "1:267302768077:web:66c7f873d6edeeaaf30884",
+  measurementId: "G-4RWWQZDM7C"
 }
 
 const app = initializeApp(firebaseConfig)
