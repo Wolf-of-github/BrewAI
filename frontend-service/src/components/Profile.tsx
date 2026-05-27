@@ -11,7 +11,6 @@ import {
   Moon,
   BarChart2,
   Tag,
-  RefreshCw,
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 import { getBillingStatus, redeemPromoCode } from '../lib/api'
@@ -233,9 +232,9 @@ export default function Profile({
           <SectionLabel>Usage</SectionLabel>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard
-              icon={<BarChart2 className="w-3.5 h-3.5" />}
-              label="Resumes tailored"
-              value={billing?.jd_count ?? '—'}
+              icon={<FileText className="w-3.5 h-3.5" />}
+              label="Today's brews"
+              value={billing ? `${billing.daily_tailor_count} / ${isPro ? '∞' : (billing.daily_tailor_limit ?? '—')}` : '—'}
             />
             <StatCard
               icon={<Download className="w-3.5 h-3.5" />}
@@ -243,14 +242,9 @@ export default function Profile({
               value={billing?.download_count ?? '—'}
             />
             <StatCard
-              icon={<FileText className="w-3.5 h-3.5" />}
-              label="Today's brews"
-              value={billing ? `${billing.daily_tailor_count} / ${isPro ? '∞' : (billing.daily_tailor_limit ?? '—')}` : '—'}
-            />
-            <StatCard
-              icon={<RefreshCw className="w-3.5 h-3.5" />}
-              label="Tweaks / brew"
-              value={billing ? billing.tweaks_per_jd : '—'}
+              icon={<BarChart2 className="w-3.5 h-3.5" />}
+              label="Total prompts"
+              value={billing?.jd_count ?? '—'}
             />
           </div>
         </section>

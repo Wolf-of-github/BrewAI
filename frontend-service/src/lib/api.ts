@@ -75,10 +75,22 @@ export async function getTailoredContent(draftId: string): Promise<string> {
   return URL.createObjectURL(blob)
 }
 
-export async function tailorResume(jdText: string, userInstructions: string = "", draftId?: string): Promise<{ draft_id: string; company: string; role: string }> {
+export async function getTailoredTex(draftId: string): Promise<string> {
+  const token = getToken()
+  const res = await fetch(`${API_GATEWAY}/resume/tailored/${draftId}/tex`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) {
+    throw new Error(await getErrorMessage(res))
+  }
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
+}
+
+export async function tailorResume(jdText: string, userInstructions: string = "", draftId?: string, onePage?: boolean): Promise<{ draft_id: string; company: string; role: string }> {
   return apiFetch('/resume/tailor', {
     method: 'POST',
-    body: JSON.stringify({ jd_text: jdText || undefined, user_instructions: userInstructions || undefined, draft_id: draftId }),
+    body: JSON.stringify({ jd_text: jdText || undefined, user_instructions: userInstructions || undefined, draft_id: draftId, one_page: onePage || undefined }),
   })
 }
 

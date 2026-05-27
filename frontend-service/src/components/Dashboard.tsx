@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getGithubOAuthUrl, handleGithubCallback, disconnectGithub as apiDisconnectGithub, updateTailoredJob, recordDownload, getFirebaseToken } from '../lib/api'
+import { apiFetch, uploadResume as apiUploadResume, deleteResume as apiDeleteResume, getGithubStatus as apiGetGithubStatus, tailorResume as apiTailorResume, listTailored as apiListTailored, getTailoredContent, getTailoredTex, getGithubOAuthUrl, handleGithubCallback, disconnectGithub as apiDisconnectGithub, updateTailoredJob, recordDownload, getFirebaseToken, sendContactEmail } from '../lib/api'
 import { db, auth, signInToFirestore } from '../lib/firebase'
 import { doc, onSnapshot } from 'firebase/firestore'
 import {
@@ -675,7 +675,7 @@ function BrewCountdown() {
 
       {/* Footer note */}
       <p className="text-[10px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-        Beta typically takes ~60s. We're actively working on reducing wait time.
+        BrewAI typically takes ~60s. We're actively working on reducing wait time.
       </p>
     </div>
   )
@@ -749,25 +749,48 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
           <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{jd.company}</p>
           <p className="text-xs" style={{ color: 'var(--text-faint)' }}>{jd.role}</p>
         </div>
-        <button
-          onClick={() => {
-            if (!pdfUrl) return
-            const localEmail = userEmail.split('@')[0]
-            const rand = Math.floor(1000 + Math.random() * 9000)
-            const filename = [...[jd.company, jd.role, localEmail].map((s) => s.replace(/\s+/g, '-')), rand].join('—') + '.pdf'
-            const a = document.createElement('a')
-            a.href = pdfUrl
-            a.download = filename
-            a.click()
-            recordDownload().catch(() => {})
-          }}
-          disabled={!pdfUrl}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
-        >
-          <Download className="w-3.5 h-3.5" />
-          Download
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              if (!jd) return
+              const localEmail = userEmail.split('@')[0]
+              const rand = Math.floor(1000 + Math.random() * 9000)
+              const filename = [...[jd.company, jd.role, localEmail].map((s) => s.replace(/\s+/g, '-')), rand].join('—') + '.tex'
+              try {
+                const texUrl = await getTailoredTex(jd.id)
+                const a = document.createElement('a')
+                a.href = texUrl
+                a.download = filename
+                a.click()
+              } catch { /* ignore */ }
+            }}
+            disabled={!pdfUrl}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            .tex
+          </button>
+          <button
+            onClick={() => {
+              if (!pdfUrl) return
+              const localEmail = userEmail.split('@')[0]
+              const rand = Math.floor(1000 + Math.random() * 9000)
+              const filename = [...[jd.company, jd.role, localEmail].map((s) => s.replace(/\s+/g, '-')), rand].join('—') + '.pdf'
+              const a = document.createElement('a')
+              a.href = pdfUrl
+              a.download = filename
+              a.click()
+              recordDownload().catch(() => {})
+            }}
+            disabled={!pdfUrl}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -801,13 +824,14 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
   const [instructions, setInstructions] = useState('')
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [onePage, setOnePage] = useState(false)
 
   async function submit() {
     if (!text.trim() || submitting) return
     const jdText = text.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim()
     setSubmitting(true)
     try {
-      const { draft_id, company, role } = await apiTailorResume(jdText, instructions.trim())
+      const { draft_id, company, role } = await apiTailorResume(jdText, instructions.trim(), undefined, onePage || undefined)
       onSubmit({
         id: draft_id,
         company,
@@ -904,6 +928,22 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
           color: 'var(--text-primary)',
         }}
       />
+
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Fit to one page</span>
+        <button
+          type="button"
+          onClick={() => setOnePage((v) => !v)}
+          className="relative w-9 h-5 rounded-full transition-colors"
+          style={{ background: onePage ? 'var(--accent)' : 'var(--border)' }}
+          aria-label="Toggle one page"
+        >
+          <span
+            className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+            style={{ transform: onePage ? 'translateX(16px)' : 'translateX(0)' }}
+          />
+        </button>
+      </div>
 
       <button
         onClick={submit}
@@ -1004,6 +1044,69 @@ function DashboardNavbar({
   )
 }
 
+// ─── Suggestions Panel ────────────────────────────────────────────────────────
+
+function SuggestionsPanel({ userId, collapsed, onExpand }: { userId: string; collapsed: boolean; onExpand: () => void }) {
+  const [message, setMessage] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  async function submit() {
+    if (!message.trim() || submitting) return
+    setSubmitting(true)
+    try {
+      await sendContactEmail(`${userId}@suggestion.com`, `${message.trim()}\n\n— ${userId}`, 'Dashboard suggestion')
+      setSent(true)
+      setMessage('')
+      setTimeout(() => setSent(false), 3000)
+    } catch { /* ignore */ } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center py-1 gap-2 cursor-pointer" onClick={onExpand}>
+        <div className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-faint)' }}
+          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--accent)'}
+          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.color = 'var(--text-faint)'}
+        >
+          <Send className="w-4 h-4" />
+        </div>
+        <span className="text-[9px] font-medium" style={{ color: 'var(--text-xfaint)', writingMode: 'vertical-rl', textOrientation: 'mixed' }}>Suggest</span>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="rounded-2xl border p-5 flex flex-col gap-3"
+      style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
+    >
+      <SectionLabel>Suggest Improvements</SectionLabel>
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
+        placeholder="Share feedback or suggest new features to help us improve BrewAI. We read every message and appreciate your input!"
+        rows={3}
+        disabled={submitting}
+        className="w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none resize-none disabled:opacity-40"
+        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+      />
+      <button
+        onClick={submit}
+        disabled={submitting || !message.trim()}
+        className="w-full py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+      >
+        <Send className="w-3.5 h-3.5" />
+        {sent ? 'Sent!' : submitting ? 'Sending…' : 'Send'}
+      </button>
+    </div>
+  )
+}
+
 // ─── Tweak Panel ──────────────────────────────────────────────────────────────
 
 function TweakPanel({
@@ -1054,7 +1157,7 @@ function TweakPanel({
   }
 
   return (
-    <div className="hidden sm:flex w-72 shrink-0 sticky top-20 self-start max-h-[calc(100vh-5rem)] flex-col">
+    <div className="flex flex-col w-full">
       <div
         className="rounded-2xl border p-5 flex flex-col gap-4 overflow-y-auto max-h-[calc(100vh-5rem)]"
         style={{ background: 'var(--bg-card)', borderColor: 'var(--border)' }}
@@ -1376,7 +1479,7 @@ export default function Dashboard({
 
       <div>
         <SectionLabel>Job Description</SectionLabel>
-        <JDInput onSubmit={addJD} disabled={jdHistory.some((e) => e.status === 'processing')} />
+        <JDInput onSubmit={addJD} />
       </div>
 
       <div id="history" className="flex flex-col gap-1 min-h-0">
@@ -1438,15 +1541,18 @@ export default function Dashboard({
           <ResumeViewer jd={activeJD} userEmail={user?.email ?? ''} />
         </main>
 
-        {/* Right: Tweak panel */}
-        {activeJD && (
-          <TweakPanel
-            jd={activeJD}
-            onTweak={handleTweak}
-            collapsed={tweakCollapsed}
-            onToggleCollapse={() => tweakCollapsed ? openTweak() : closeTweak()}
-          />
-        )}
+        {/* Right: Tweak panel + Suggestions */}
+        <div className={`hidden sm:flex flex-col shrink-0 sticky top-20 self-start gap-3 ${tweakCollapsed ? '' : 'w-72'}`}>
+          {activeJD && (
+            <TweakPanel
+              jd={activeJD}
+              onTweak={handleTweak}
+              collapsed={tweakCollapsed}
+              onToggleCollapse={() => tweakCollapsed ? openTweak() : closeTweak()}
+            />
+          )}
+          <SuggestionsPanel userId={user.email.split('@')[0]} collapsed={tweakCollapsed} onExpand={() => openTweak()} />
+        </div>
       </div>
 
       {/* ── Mobile layout (<sm) ───────────────────────────────── */}

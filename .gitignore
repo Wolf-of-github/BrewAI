@@ -18,3 +18,5 @@ venv/
 .DS_Store
 scripts
 meta-data
+
+admin-monitor
