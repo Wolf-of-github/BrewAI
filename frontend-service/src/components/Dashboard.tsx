@@ -812,7 +812,7 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
             <BrewCountdown />
           </div>
         )}
-        {pdfUrl && <iframe src={pdfUrl} className="w-full h-full border-0" title="Resume Preview" />}
+        {pdfUrl && <iframe src={pdfUrl} className="w-full border-0" style={{ height: '150vw', minHeight: '900px' }} title="Resume Preview" />}
       </div>
     </div>
   )
@@ -824,14 +824,14 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
   const [instructions, setInstructions] = useState('')
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [onePage, setOnePage] = useState(false)
+  // const [onePage, setOnePage] = useState(false)
 
   async function submit() {
     if (!text.trim() || submitting) return
     const jdText = text.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim()
     setSubmitting(true)
     try {
-      const { draft_id, company, role } = await apiTailorResume(jdText, instructions.trim(), undefined, onePage || undefined)
+      const { draft_id, company, role } = await apiTailorResume(jdText, instructions.trim(), undefined)
       onSubmit({
         id: draft_id,
         company,
@@ -929,6 +929,7 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
         }}
       />
 
+      {/* One-page toggle hidden for now
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Fit to one page</span>
         <button
@@ -944,6 +945,7 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
           />
         </button>
       </div>
+      */}
 
       <button
         onClick={submit}
@@ -1050,9 +1052,15 @@ function SuggestionsPanel({ userId, collapsed, onExpand }: { userId: string; col
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [sent, setSent] = useState(false)
+  const [confirming, setConfirming] = useState(false)
 
-  async function submit() {
+  function submit() {
     if (!message.trim() || submitting) return
+    setConfirming(true)
+  }
+
+  async function confirmSend() {
+    setConfirming(false)
     setSubmitting(true)
     try {
       await sendContactEmail(`${userId}@suggestion.com`, `${message.trim()}\n\n— ${userId}`, 'Dashboard suggestion')
@@ -1088,21 +1096,41 @@ function SuggestionsPanel({ userId, collapsed, onExpand }: { userId: string; col
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
-        placeholder="Share feedback or suggest new features to help us improve BrewAI. We read every message and appreciate your input!"
+        placeholder="Share feedback/suggestions"
         rows={3}
         disabled={submitting}
         className="w-full px-3 py-2.5 rounded-lg border text-sm focus:outline-none resize-none disabled:opacity-40"
         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
       />
-      <button
-        onClick={submit}
-        disabled={submitting || !message.trim()}
-        className="w-full py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
-      >
-        <Send className="w-3.5 h-3.5" />
-        {sent ? 'Sent!' : submitting ? 'Sending…' : 'Send'}
-      </button>
+      {confirming ? (
+        <div className="flex gap-2">
+          <button
+            onClick={() => setConfirming(false)}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-colors"
+            style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={confirmSend}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+            style={{ background: 'var(--accent)', color: 'var(--accent-text)' }}
+          >
+            <Send className="w-3.5 h-3.5" />
+            Confirm
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={submit}
+          disabled={submitting || !message.trim()}
+          className="w-full py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+        >
+          <Send className="w-3.5 h-3.5" />
+          {sent ? 'Sent!' : submitting ? 'Sending…' : 'Send'}
+        </button>
+      )}
     </div>
   )
 }
@@ -1583,6 +1611,7 @@ export default function Dashboard({
                   <p className="text-sm" style={{ color: 'var(--text-faint)' }}>Select a job first to tweak your resume.</p>
                 </div>
               )}
+              <SuggestionsPanel userId={user.email.split('@')[0]} collapsed={false} onExpand={() => {}} />
             </div>
           )}
         </div>

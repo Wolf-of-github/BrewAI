@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -338,6 +339,7 @@ export default function ResumeRenderer({ data }: { data: ResumeData }) {
           padding: 0.39in 0.5in;
           box-sizing: border-box;
           line-height: 1.35;
+          transform-origin: top center;
         }
         #draft .name { font-size: 15pt; font-weight: bold; color: #2563a8; margin-bottom: 2px; }
         #draft .divider { border: none; border-top: 0.75px solid #111; margin: 2px 0 3px 0; }
@@ -351,9 +353,14 @@ export default function ResumeRenderer({ data }: { data: ResumeData }) {
         #draft .entry-gap { margin-top: 5pt; }
         #draft ul { margin: 2px 0 0 0; padding-left: 1.1em; }
         #draft li { text-align: justify; }
+        #draft-scale-wrapper {
+          width: 8.5in;
+          transform-origin: top center;
+        }
       `}</style>
 
-      <div id="draft-wrapper" className="bg-gray-200 flex justify-center py-6 min-h-full">
+      <div id="draft-wrapper" className="bg-gray-200 flex justify-center py-6 min-h-full overflow-x-hidden">
+        <ScaledDraft>
         <div id="draft" className="shadow-2xl">
 
           {p.name && <div className="name">{p.name}</div>}
@@ -443,8 +450,34 @@ export default function ResumeRenderer({ data }: { data: ResumeData }) {
           ))}
 
         </div>
+        </ScaledDraft>
       </div>
     </>
+  )
+}
+
+function ScaledDraft({ children }: { children: React.ReactNode }) {
+  const [scale, setScale] = useState(1)
+
+  useEffect(() => {
+    function update() {
+      const draftWidthPx = 8.5 * 96
+      const available = window.innerWidth - 32
+      setScale(Math.min(1, available / draftWidthPx))
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  const draftWidthPx = 8.5 * 96
+
+  return (
+    <div style={{ width: `${draftWidthPx * scale}px`, flexShrink: 0 }}>
+      <div style={{ width: `${draftWidthPx}px`, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+        {children}
+      </div>
+    </div>
   )
 }
 

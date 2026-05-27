@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, LucideGithub, FileSearch, Download } from 'lucide-react'
+import { CloudArrowUpIcon, GithubLogoIcon, BinocularsIcon, DownloadIcon, CircuitryIcon, ChatIcon, CardsThreeIcon, CodeIcon, SparkleIcon } from '@phosphor-icons/react'
 import { signInWithGoogle } from '../lib/firebase'
 
 const GoogleIcon = () => (
@@ -15,15 +15,15 @@ const GoogleIcon = () => (
 const steps = [
   {
     step: '01',
-    icon: <Upload className="w-5 h-5" />,
+    icon: <CloudArrowUpIcon className="w-5 h-5" />,
     title: 'Upload your resume',
-    desc: 'Your base document becomes the foundation. Skills, experience, projects — all in one place.',
+    desc: 'Your base document becomes the foundation. Skills, experience, projects',
     detail: 'We parse everything so you never start from scratch again.',
     color: 'amber',
   },
   {
     step: '02',
-    icon: <LucideGithub className="w-5 h-5" />,
+    icon: <GithubLogoIcon className="w-5 h-5" />,
     title: 'Connect GitHub',
     desc: 'Optional, but powerful. We pull in real project context directly from your repos.',
     detail: 'Your commits speak louder than bullet points.',
@@ -31,7 +31,7 @@ const steps = [
   },
   {
     step: '03',
-    icon: <FileSearch className="w-5 h-5" />,
+    icon: <BinocularsIcon className="w-5 h-5" />,
     title: 'Paste the job description',
     desc: 'Any role, any company. BrewAI reads what recruiters and ATS actually care about.',
     detail: 'Keywords, skills, requirements — extracted instantly.',
@@ -39,9 +39,9 @@ const steps = [
   },
   {
     step: '04',
-    icon: <Download className="w-5 h-5" />,
+    icon: <DownloadIcon className="w-5 h-5" />,
     title: 'Download and apply',
-    desc: 'Your resume, tailored to that specific role. Clean, one-page, ATS-ready.',
+    desc: 'Your resume, tailored to that specific role. Clean and ATS-friendly.',
     detail: 'Ready to send in seconds.',
     color: 'amber',
   },
@@ -120,7 +120,7 @@ export default function Home() {
             className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05] mb-6"
             style={{ color: 'var(--text-primary)' }}
           >
-            Just One Resume!{' '}
+            One Resume!{' '}
             <span className="text-transparent bg-clip-text bg-linear-to-r from-[#4A6FA5] to-[#F59E0B]">
               Every role.
             </span>
@@ -211,6 +211,83 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Under the Hood */}
+      <section className="border-t" style={{ borderColor: 'var(--border)' }}>
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
+          <div className="text-center mb-12">
+            <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: 'var(--accent)' }}>
+              Under the hood
+            </p>
+            <h2 className="text-2xl sm:text-4xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+              Seriously powerful AI.
+            </h2>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {[
+              {
+                icon: <CircuitryIcon className="w-4 h-4" />,
+                title: 'Gemini 2.5 Flash',
+                desc: '~1M token context window — your entire career history, GitHub projects, and job description fit in a single pass.',
+                color: 'amber',
+              },
+              {
+                icon: <ChatIcon className="w-4 h-4" />,
+                title: 'Persistent chat memory',
+                desc: 'Tweak your resume with follow-up prompts. We store conversation summaries in Redis so context is never lost.',
+                color: 'purple',
+              },
+              {
+                icon: <SparkleIcon className="w-4 h-4" />,
+                title: 'Parallel processing',
+                desc: 'Tailor for multiple roles at once. Jobs run in parallel — no waiting in line.',
+                color: 'amber',
+              },
+              {
+                icon: <CardsThreeIcon className="w-4 h-4" />,
+                title: 'ATS-optimized prompts',
+                desc: 'Carefully crafted prompts surface the right keywords and structure that applicant tracking systems reward.',
+                color: 'purple',
+              },
+              {
+                icon: <CodeIcon className="w-4 h-4" />,
+                title: 'LaTeX output, AI-editable',
+                desc: 'Resumes are generated as clean LaTeX. Every section is editable with a follow-up AI prompt — no manual formatting.',
+                color: 'amber',
+              },
+            ].map((item) => {
+              const isAmber = item.color === 'amber'
+              return (
+                <div
+                  key={item.title}
+                  className="rounded-xl p-5 border"
+                  style={{
+                    background: 'var(--bg-secondary)',
+                    borderColor: 'var(--border)',
+                  }}
+                >
+                  <div
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg mb-3"
+                    style={{
+                      background: isAmber ? 'rgba(245,158,11,0.12)' : 'rgba(74,111,165,0.12)',
+                      color: isAmber ? '#F59E0B' : '#4A6FA5',
+                    }}
+                  >
+                    {item.icon}
+                  </div>
+                  <h3 className="font-semibold text-sm mb-1.5" style={{ color: 'var(--text-primary)' }}>
+                    {item.title}
+                  </h3>
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {item.desc}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
       {/* CTA */}
       <section id="cta" className="border-t" style={{ borderColor: 'var(--border)' }}>
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
@@ -218,7 +295,7 @@ export default function Home() {
             Ready to apply smarter?
           </h2>
           <p className="mb-10" style={{ color: 'var(--text-muted)' }}>
-            It takes two minutes to set up. Your next role might be closer than you think.
+            Just takes a few minutes to set up. Your next role might be closer than you think.
           </p>
           <button
             onClick={handleSignIn}

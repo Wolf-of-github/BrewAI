@@ -15,7 +15,7 @@ export default function Footer() {
           </div>
           <div className="flex flex-col items-center gap-1">
             <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
-              © {new Date().getFullYear()} Brew AI. Built for tech aspirants.
+              © {new Date().getFullYear()} Brew AI. Built in CA · USC Viterbi
             </p>
           </div>
           <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--text-faint)' }}>

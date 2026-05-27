@@ -3,11 +3,11 @@ import Footer from './Footer'
 
 export default function Privacy() {
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-base)', color: 'var(--text-muted)' }}>
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>
       <Navbar />
       <main className="flex-1 max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
         <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Privacy Policy</h1>
-        <p className="text-sm mb-12">Effective date: March 25, 2025</p>
+        <p className="text-sm mb-12" style={{ color: 'var(--text-faint)' }}>Effective date: March 25, 2025</p>
 
         <Section title="1. What We Collect">
           <p>When you use Brew AI, we collect:</p>

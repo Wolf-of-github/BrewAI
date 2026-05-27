@@ -1,453 +1,405 @@
 ================================================================================
-BREWAI-PROD — ARCHITECTURE AUDIT
-Generated: 2026-04-23
+BREWAI-PROD — PROJECT ARCHITECTURE REPORT
+Generated: 2026-05-27
 ================================================================================
 
+
 ────────────────────────────────────────────────────────────────────────────────
-1. ARCHITECTURE OVERVIEW
+1. SUMMARY
 ────────────────────────────────────────────────────────────────────────────────
 
-High-level: Microservices on GCP Cloud Run. All services are containerized. The
-frontend is a React 19 SPA deployed to Firebase Hosting. Backend services are
-all private Cloud Run instances except the api-gateway-service (public ingress).
-Async inter-service calls go through Cloud Tasks (not synchronous HTTP), making
-them retry-safe.
+BrewAI is an AI-powered resume tailoring SaaS. Users upload their resume and
+optionally connect their GitHub profile, paste a job description, and receive a
+professionally typeset, LaTeX-compiled PDF resume tailored to that role. The
+platform has a freemium billing model via Stripe and is deployed entirely on
+Google Cloud Platform, with Firebase for auth and hosting.
 
-SERVICES MAP:
-  frontend-service/        React 19 + TypeScript + Vite + TailwindCSS 4
-  auth-service/            Node.js + Express — Google OAuth, JWT, refresh tokens
-  api-gateway-service/     Node.js + Express — Public API surface, all user ops
-  generative-ai-service/   Python + Flask — Gemini 2.5 Flash, Redis (Memorystore)
-  github-reader-service/   Python + Flask — GitHub GraphQL scanning + summarization
-  resume-parser-service/   Python + Flask — PDF/DOCX text extraction + safety check
-  infra/                   Terraform (GCP) — Cloud Run, Cloud Tasks, GCS, Firestore,
-                                             Secret Manager, Memorystore (Redis)
-
-DATA FLOW (high level):
-  Browser
-    │  1. Google sign-in via Firebase SDK → ID token
-    ▼
-  auth-service ──── Firestore (users, refreshTokens collections)
-    │  Issues 24h JWT + 7d refresh token
-    ▼
-  api-gateway-service ──── Firestore (drafts, uploadedResumes, users)
-    │  JWT verification on every authenticated route                GCS (raw resumes)
-    │
-    ├─► Cloud Tasks → resume-parser-service  (PDF/DOCX extraction)
-    ├─► Cloud Tasks → github-reader-service  (repo selection + summarization)
-    └─► Cloud Tasks → generative-ai-service  (Gemini generation + HTML render)
-                              │
-                              ├─► Redis (conversation context per draft)
-                              └─► GCS  (rendered_resume/{userId}/{draftId}.html)
-                                        └─► Firestore (draft.status = completed)
-                                                  └─► Frontend onSnapshot listener
-
-REALTIME:
-  Frontend gets a Firebase custom token from auth-service (/auth/firebase-token)
-  then calls signInWithCustomToken + onSnapshot on drafts/{draftId} to track
-  generation status without polling the gateway.
-
-INTER-SERVICE AUTH:
-  Cloud Tasks → backend services: OIDC tokens (api-gateway-sa service account)
-  Browser → auth-service: Google ID token in body (no auth required to sign in)
-  Browser → api-gateway: Bearer JWT in Authorization header
-  Browser → Firestore: Firebase SDK with custom token (onSnapshot only)
+  Stack at a glance:
+    Frontend      React 19 + TypeScript + Vite + TailwindCSS 4
+    Auth          Node.js / Express — JWT, Google OAuth, Firebase custom tokens
+    API Gateway   Node.js / Express — authenticated REST API surface
+    AI Pipeline   Python / Flask — Gemini 2.5 Flash, LaTeX compilation (tectonic)
+    Parsers       Python / Flask — resume PDF/DOCX extraction, GitHub repo scan
+    Infra         Terraform on GCP — Cloud Run, Cloud Tasks, GCS, Firestore,
+                                     Secret Manager, Memorystore (Redis), VPC
+    Hosting       Firebase Hosting — brewai.us / brewai-497502.web.app
 
 
 ────────────────────────────────────────────────────────────────────────────────
-2. SECURITY ISSUES
+2. SERVICES MAP
 ────────────────────────────────────────────────────────────────────────────────
 
-[SEC-1] CRITICAL — Plaintext secrets on disk
-  Files: infra/terraform.tfvars
-         generative-ai-service/.env
-  The tfvars file contains live production values for jwt_secret, github_token,
-  gemini_api_key, github_client_secret. The .env file duplicates these and is
-  NOT in .gitignore. Any accidental `git add .` commits all credentials.
-  Action: Rotate ALL secrets immediately. Delete both files. Add *.tfvars and
-  .env to .gitignore at repo root. Use terraform.tfvars.example with placeholders.
+  frontend-service/
+    React SPA deployed to Firebase Hosting.
+    Components: Home, Dashboard, ResumeRenderer, Navbar, Profile, StripeCheckout,
+                Footer, Privacy, Terms.
+    Talks to: Auth Service (sign-in), API Gateway (all resume/billing ops),
+              Firestore directly (real-time draft status via onSnapshot).
 
-[SEC-2] HIGH — JWT cookie is not HttpOnly (JS-readable)
-  File: frontend-service/src/lib/firebase.ts:49
-  Code: document.cookie = `brew_token=${token}; path=/; max-age=86400; SameSite=Strict`
-  The JWT is set as a JS-readable cookie. Any XSS payload can exfiltrate it.
-  Combined with SEC-3, this is a full session hijack chain.
-  Action: Move token storage to an httpOnly cookie set by auth-service response
-  headers, or accept the XSS risk by ensuring SEC-3 is fixed first.
+  auth-service/
+    Node.js / Express — Cloud Run (public ingress).
+    Verifies Google ID tokens via Firebase Admin SDK, issues a signed 24h JWT +
+    a Firebase custom token for Firestore SDK access. Creates / updates the
+    user document in Firestore on first sign-in.
+    Routes: POST /auth/google, GET /health.
+    Secrets: jwt_secret, GOOGLE_CLIENT_ID (Secret Manager).
 
-[SEC-3] HIGH — dangerouslySetInnerHTML on AI-generated HTML (no sanitization)
-  File: frontend-service/src/components/Dashboard.tsx:612
-  Code: <div dangerouslySetInnerHTML={{ __html: html }} />
-  HTML is fetched from GCS (written by Gemini processing user-controlled JD text
-  and GitHub READMEs). A crafted JD could inject <script> tags that Gemini
-  faithfully includes in generated HTML, executing in the user's browser.
-  SEC-2 + SEC-3 = stored XSS → JWT theft → full account takeover.
-  Action: Run html through DOMPurify before setting innerHTML. Or render in a
-  sandboxed iframe with sandbox="allow-same-origin" (no allow-scripts).
+  api-gateway-service/
+    Node.js / Express — Cloud Run (public ingress).
+    Single authenticated entry point for all user operations. Verifies JWT on
+    every request, then routes to downstream services via direct HTTP or Cloud
+    Tasks queues.
+    Key route groups:
+      Resume CRUD   — upload, list, delete, tailor, tailored list/content/tex
+      GitHub        — status, upload, disconnect, OAuth URL, OAuth callback
+      Billing       — Stripe checkout, portal, webhook, promo redeem, record ops
+      Contact       — Resend email (unauthenticated)
+    Secrets: jwt_secret, github_client_id, github_client_secret, stripe keys,
+             resend_api_key (Secret Manager via lib/secrets.js).
 
-[SEC-4] HIGH — GitHub OAuth missing state parameter (CSRF)
-  File: api-gateway-service/src/controllers/githubOAuth.js:13
-  Code: `...authorize?client_id=${GITHUB_CLIENT_ID}&scope=read:user` (no state)
-  An attacker can initiate OAuth with their GitHub account, steal the ?code, and
-  replay against the callback with the victim's JWT — linking attacker's GitHub
-  to victim's BrewAI account.
-  Action: Generate a cryptographic state token, store in session/Redis with user
-  context, validate on callback before exchanging the code.
+  resume-parser-service/
+    Python / Flask — Cloud Run (internal ingress only).
+    Downloads raw PDF/DOCX from GCS, extracts text, runs Gemini to produce a
+    structured resume.json, writes it back to GCS, updates Firestore.
+    Triggered by: Cloud Tasks queue (enqueued by API Gateway on /resume/upload).
+    Secrets: gemini_api_key (Secret Manager).
 
-[SEC-5] MEDIUM — GitHub access token stored plaintext in Firestore
-  File: api-gateway-service/src/controllers/githubOAuth.js:57
-  The raw OAuth access_token is stored in users/{userId}.github_access_token.
-  Any Firestore data exposure or overly-permissive rules reveals live tokens.
-  Action: Encrypt tokens before writing, or use Secret Manager per user (costly).
-  At minimum, store only the token hash + expiry and force re-auth when needed.
+  github-reader-service/
+    Python / Flask — Cloud Run (internal ingress only).
+    Calls GitHub API to list user repos, uses Gemini to select the most relevant
+    ones, scrapes READMEs, stores github_projects.json in GCS, updates Firestore.
+    Triggered by: Cloud Tasks queue (enqueued by API Gateway on /github-id/upload).
+    Secrets: GITHUB_TOKEN, gemini_api_key (Secret Manager).
 
-[SEC-6] MEDIUM — Jinja2 autoescape=False in generative-ai-service
-  File: generative-ai-service/app/renderer.py:32
-  Code: env = Environment(..., autoescape=False)
-  Resume field values from Gemini output rendered into HTML without escaping.
-  A malicious name like <img onerror=alert(1)> in Gemini's JSON would render
-  unescaped into the GCS HTML file (which then hits SEC-3 in the frontend).
-  Action: Set autoescape=True; wrap explicit HTML fragments with Markup().
+  generative-ai-service/
+    Python / Flask — Cloud Run (internal ingress only, VPC egress).
+    Core AI pipeline. Receives a generation job from Cloud Tasks:
+      1. Fetches resume.json + github_projects.json from GCS.
+      2. Detects intent: tweak / projects / full pipeline / revamp.
+      3. Calls Gemini to select projects, generate or surgically edit LaTeX.
+      4. Scrapes GitHub READMEs if needed.
+      5. Compiles LaTeX → PDF via tectonic inside the container.
+      6. Uploads .tex + PDF to GCS, updates Firestore draft status.
+    Redis (Memorystore): caches multi-turn conversation context per draft
+    (project selections, prior prompts, JD).
+    Firestore collections: drafts, generative-ai-service-jobs,
+                           generative-ai-service-data/stats.
+    Secrets: gemini_api_key, github_token (Secret Manager).
 
-[SEC-7] MEDIUM — No multer file size limit
-  File: api-gateway-service/src/routes.js:19
-  Code: multer({ storage: multer.memoryStorage() }) — no limits option
-  A user can upload a 1GB file, buffering it in gateway RAM → OOM crash.
-  Action: Add limits: { fileSize: 10 * 1024 * 1024 } (10MB) to multer options.
-  Also validate on frontend before upload starts.
-
-[SEC-8] MEDIUM — Rate limiting commented out
-  File: api-gateway-service/src/controllers/resumeTailor.js:41-60
-  The entire per-user FREE_DAILY_LIMIT=3 enforcement block is commented out.
-  Free users can currently tailor resumes unlimited times, incurring Gemini costs.
-  Action: Uncomment the block and verify the Firestore field (jd_count) resets
-  daily. Add a frontend 402 error handler to show an upgrade prompt.
-
-[SEC-9] LOW — simulateUpgrade/simulateDowngrade routes in production build
-  File: api-gateway-service/src/controllers/billing.js:89-113
-  These are guarded by NODE_ENV === 'production' returning 404, but they are
-  still registered. If NODE_ENV is unset, any authenticated user upgrades themselves.
-  Action: Remove these routes entirely from production builds, or gate behind
-  an admin-only middleware checking a claims field on the user document.
+  infra/
+    Terraform — GCS-backed remote state (brewai-497502-tf-state / infra).
+    Modules: secrets, storage, firestore, resume-parser-service,
+             github-reader-service, generative-ai-service, api-gateway-service,
+             auth-service.
+    GCP project: brewai-497502   Region: us-central1.
 
 
 ────────────────────────────────────────────────────────────────────────────────
-3. USER FLOW FAILURE POINTS (where frontend should raise errors)
+3. ARCHITECTURE DIAGRAM
 ────────────────────────────────────────────────────────────────────────────────
 
-FLOW A: SIGN-IN
-  [A1] Popup blocked by browser (Safari/Firefox default behavior)
-       File: frontend-service/src/components/Home.tsx:87
-       Current: Generic 'Sign-in failed. Please try again.'
-       Fix: Detect error.code === 'auth/popup-blocked' and show:
-            "Popups are blocked. Please allow popups for this site and try again."
-            with a link to browser settings.
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │                         USER / BROWSER                               │
+  │           React + Vite SPA — Firebase Hosting                        │
+  │           (brewai.us / brewai-497502.web.app)                        │
+  └──────────────────┬─────────────────────────┬────────────────────────┘
+                     │ Google Sign-In popup     │ All other API calls
+                     │ + ID token exchange      │ (JWT in Authorization header)
+                     ▼                          ▼
+         ┌───────────────────────┐   ┌──────────────────────────────┐
+         │    Auth Service       │   │    API Gateway Service       │
+         │    Node/Express       │   │    Node/Express              │
+         │    Cloud Run          │   │    Cloud Run (public)        │
+         │    (public ingress)   │   │                              │
+         │                       │   │  JWT middleware on all       │
+         │  Verifies Google ID   │   │  authenticated routes        │
+         │  token via Firebase   │   │                              │
+         │  Admin SDK            │   │  Rate limits:                │
+         │                       │   │    100 req/min global        │
+         │  Issues:              │   │    10 req/min on /tailor     │
+         │  • 24h JWT            │   │    15 req/15min on /auth     │
+         │  • Firebase custom    │   │                              │
+         │    token              │   │  File upload: 10MB limit,    │
+         │                       │   │  PDF/DOCX only (multer)      │
+         └───────────────────────┘   └──────────────┬───────────────┘
+                     │                              │
+                     │                 ┌────────────┼──────────────────┐
+                     │   Cloud Tasks   ▼            ▼                  ▼
+                     │  ┌──────────────────┐  ┌──────────────┐  ┌──────────────┐
+                     │  │ Resume Parser    │  │ GitHub       │  │ Generative   │
+                     │  │ Service          │  │ Reader       │  │ AI Service   │
+                     │  │ Python/Flask     │  │ Service      │  │ Python/Flask │
+                     │  │ Cloud Run        │  │ Python/Flask │  │ Cloud Run    │
+                     │  │ INTERNAL ONLY    │  │ Cloud Run    │  │ INTERNAL+VPC │
+                     │  │                  │  │ INTERNAL     │  │              │
+                     │  │ PDF/DOCX parse   │  │              │  │ Gemini 2.5   │
+                     │  │ → resume.json    │  │ GitHub API   │  │ Flash        │
+                     │  │ in GCS           │  │ → READMEs    │  │              │
+                     │  │                  │  │ → projects   │  │ tectonic     │
+                     │  │ Gemini: extract  │  │   .json GCS  │  │ LaTeX→PDF    │
+                     │  │ structured JSON  │  │              │  │              │
+                     │  └────────┬─────────┘  └──────┬───────┘  │ Redis cache  │
+                     │           │                   │          │ (Memorystore)│
+                     │           └───────────────────┘          └──────┬───────┘
+                     │                     │                           │
+                     ▼                     ▼                           ▼
+         ┌───────────────────────────────────────────────────────────────────┐
+         │                    Google Cloud Platform                          │
+         │                                                                   │
+         │  ┌─────────────────────┐   ┌──────────────────────────────────┐  │
+         │  │  Firestore          │   │  Cloud Storage (GCS)             │  │
+         │  │  (default DB)       │   │                                  │  │
+         │  │                     │   │  resumes/{userId}/{fileId}       │  │
+         │  │  Collections:       │   │  github_projects/{userId}.json   │  │
+         │  │  • users            │   │  rendered_resume/{userId}/       │  │
+         │  │  • drafts           │   │    {draftId}.tex                 │  │
+         │  │  • genai-service-   │   │    {draftId}.pdf                 │  │
+         │  │    jobs             │   │  artifacts/ (downloads)          │  │
+         │  │  • genai-service-   │   └──────────────────────────────────┘  │
+         │  │    data/stats       │                                          │
+         │  └─────────────────────┘   ┌──────────────────────────────────┐  │
+         │                            │  Secret Manager                  │  │
+         │  ┌─────────────────────┐   │  jwt_secret                      │  │
+         │  │  Cloud Tasks Queues │   │  google_client_id                │  │
+         │  │                     │   │  github_token                    │  │
+         │  │  • genai-service-   │   │  gemini_api_key                  │  │
+         │  │    generate         │   │  github_client_id/secret         │  │
+         │  │  • resume-parser    │   │  resend_api_key                  │  │
+         │  │    queue            │   │  stripe_secret_key               │  │
+         │  │  • github-reader    │   │  stripe_webhook_secret           │  │
+         │  │    queue            │   └──────────────────────────────────┘  │
+         │  │                     │                                          │
+         │  │  Retry: 3 attempts  │   ┌──────────────────────────────────┐  │
+         │  │  Window: 30 min     │   │  Artifact Registry               │  │
+         │  │  Backoff: 10-300s   │   │  Docker images per service       │  │
+         │  └─────────────────────┘   └──────────────────────────────────┘  │
+         └───────────────────────────────────────────────────────────────────┘
 
-  [A2] Auth-service unreachable / returns non-2xx after Firebase sign-in
-       File: frontend-service/src/lib/firebase.ts:44-52
-       Current: Throws but the error may surface as unhandled rejection
-       Fix: Wrap the POST to /auth/google in try/catch, show a banner:
-            "Authentication service is unavailable. Please try again later."
-
-FLOW B: RESUME UPLOAD
-  [B1] No frontend file size validation
-       File: frontend-service/src/components/Dashboard.tsx (ResumePanel input)
-       Fix: Before calling apiUploadResume, check file.size > 10MB and show:
-            "File must be under 10MB. Please compress your resume and try again."
-
-  [B2] Upload API call fails silently
-       File: frontend-service/src/components/Dashboard.tsx:87-89
-       Current: console.error only — no toast, no error state
-       Fix: Set an `uploadError` state, render it below the upload button.
-            Show HTTP status where possible: 413 → "File too large", 415 →
-            "Unsupported file type. Please upload a PDF or DOCX.", 500 →
-            "Upload failed. Please try again."
-
-  [B3] Cloud Task to resume-parser fails all retries → no parsed JSON
-       Current: No detection. Future tailor silently uses empty resume.
-       Fix: After enqueue, set a timeout on Firestore uploadedResumes status.
-            The parser should set status = 'parsed' | 'failed'. Gateway should
-            check this before allowing tailor. Frontend should show:
-            "Your resume could not be processed. Please re-upload."
-
-FLOW C: GITHUB CONNECT
-  [C1] GitHub OAuth callback fails (network, state mismatch, code expired)
-       File: frontend-service/src/components/Dashboard.tsx:228-230
-       Current: .catch(err => console.error(...)) — no user feedback
-       Fix: Set `githubError` state, display: "Failed to connect GitHub. Please
-            try again." with the specific error if available.
-
-  [C2] GitHub popup/redirect blocked or user denies access
-       Current: Same as C1, swallowed silently
-       Fix: Check for error=access_denied in the redirect URL params in the
-            useEffect that handles the callback, and show a friendly message.
-
-  [C3] GitHub reader Cloud Task takes too long (20+ repos to summarize)
-       Current: User sees "connecting" indefinitely
-       Fix: The github-reader-service should update a Firestore field
-            (github_status: 'processing' | 'ready' | 'failed'). Frontend should
-            subscribe and show progress or a timeout error after ~3 minutes.
-
-FLOW D: RESUME TAILORING
-  [D1] JD submission API call fails — silent
-       File: frontend-service/src/components/Dashboard.tsx:644-647
-       Current: console.error only, spinner disappears, form resets
-       Fix: Catch the error, check status code:
-            402 → "You've reached your daily limit. Upgrade to Pro for unlimited brews."
-            400 → "Please paste a valid job description."
-            500 → "Something went wrong. Please try again in a moment."
-
-  [D2] Firestore onSnapshot error (token expired, permission denied)
-       File: frontend-service/src/components/Dashboard.tsx:1007
-       Current: Error callback is () => {} — draft stuck at "processing" forever
-       Fix: In the error callback, set draft status to 'failed' in local state
-            and show: "Lost connection to status updates. Refresh the page." with
-            a retry button that re-establishes the snapshot.
-
-  [D3] Draft status = 'failed' in Firestore (genai service error)
-       Current: Frontend likely doesn't show a user-readable failed state
-       Fix: In the onSnapshot handler, when status === 'failed', show:
-            "Resume generation failed. Please try again." with the option to
-            re-submit the same JD.
-
-  [D4] getTailoredContent returns 404 (HTML not written to GCS due to EH-7)
-       File: frontend-service/src/lib/api.ts (getTailoredContent)
-       Current: Unknown — likely shows empty viewer
-       Fix: Check for non-2xx response in apiGetTailoredContent and show:
-            "Your resume could not be loaded. Please try re-generating."
-
-  [D5] BrewCountdown timer loops without real progress info
-       File: frontend-service/src/components/Dashboard.tsx:459
-       Current: Counts 60s then resets, purely cosmetic
-       Fix: Replace with an indeterminate spinner + elapsed time display.
-            Show actual stage messages if the AI service writes stage to Firestore
-            (e.g., status: 'extracting_metadata' | 'generating' | 'finalizing').
-
-FLOW E: TWEAK (RE-TAILOR)
-  [E1] 6th tweak hits 5-job limit, draft stuck in 'processing'
-       File: generative-ai-service/app/routes.py (MAX_JOBS_PER_DRAFT = 5)
-       Current: Cloud Task returns 429, retries 3x, then drops. Draft stays
-                at 'processing' in Firestore forever.
-       Fix: The AI service should update draft.status = 'failed' with a
-            reason when the job limit is hit. Frontend should show:
-            "This draft has reached its tweak limit. Please start a new brew."
-
-  [E2] handleTweak throws — error swallowed
-       File: frontend-service/src/components/Dashboard.tsx:843
-       Current: TweakPanel.submit() has bare try/finally, error is lost
-       Fix: Show error state in TweakPanel: "Tweak failed. Please try again."
-
-FLOW F: DOWNLOAD
-  [F1] window.open blocked by popup blocker
-       File: frontend-service/src/components/Dashboard.tsx:581
-       Current: Blob URL created but window is null, URL is never revoked
-       Fix: Check if win === null after window.open(), show:
-            "Popups are blocked. Please allow popups to download your resume."
-            and call URL.revokeObjectURL(url) in the null case.
+  External APIs:
+    Google Gemini API    resume generation, project selection, resume editing
+    GitHub REST API      repo listing, README scraping
+    Stripe API           checkout sessions, billing portal, webhook events
+    Resend API           contact form transactional email
+    Firebase Auth        Google sign-in token verification, custom token issue
 
 
 ────────────────────────────────────────────────────────────────────────────────
-4. ERROR HANDLING GAPS (backend)
+4. DATA FLOW — FULL USER JOURNEY
 ────────────────────────────────────────────────────────────────────────────────
 
-[EH-7] CRITICAL (runtime) — renderer.py silently swallows render failure
-  File: generative-ai-service/app/renderer.py:56-57
-  The render_and_upload function catches all exceptions and logs but does NOT
-  re-raise. The calling route code gets None from f_render.result() and marks
-  the draft 'completed'. The HTML was never written. Frontend gets a 404 on
-  content load. User sees a blank resume viewer for a "completed" job.
-  Fix: Re-raise the exception so routes.py can catch it and write status='failed'
-  to Firestore, which the frontend can surface as an error.
+  SIGN-IN
+    1. User clicks "Sign in with Google"
+    2. Firebase SDK opens Google popup → returns ID token
+    3. Frontend POSTs ID token to auth-service /auth/google
+    4. Auth Service verifies token via Firebase Admin, upserts users/{uid} in
+       Firestore, mints 24h JWT + Firebase custom token
+    5. Frontend stores JWT in a SameSite=Strict cookie (brew_token)
+    6. Frontend calls signInWithCustomToken → unlocks Firestore SDK (onSnapshot)
 
-[EH-8] MEDIUM — billing controllers missing try/catch
-  File: api-gateway-service/src/controllers/billing.js:22-65
-  getBillingStatus, recordDownload, recordJD have no error handling. Firestore
-  failures propagate as unhandled Express errors.
-  Fix: Wrap each in try/catch, return 500 with a structured error body.
+  RESUME UPLOAD
+    1. User selects PDF/DOCX (≤10MB) in Dashboard
+    2. Frontend POSTs multipart form to gateway /resume/upload (JWT auth)
+    3. Gateway stores raw file in GCS: resumes/{userId}/{fileId}
+    4. Gateway writes uploadedResumes/{fileId} doc to Firestore (status=pending)
+    5. Gateway enqueues Cloud Task → resume-parser-service /parse
+    6. Parser downloads file, extracts text, calls Gemini, writes resume.json to GCS
+    7. Parser updates Firestore uploadedResumes/{fileId} status=parsed
 
-[EH-9] MEDIUM — redeemPromo Firestore transaction not guarded
-  File: api-gateway-service/src/controllers/billing.js:259-273
-  Transaction failures cause unhandled promise rejection.
-  Fix: Wrap in try/catch, return 500 or 409 (conflict) as appropriate.
+  GITHUB CONNECT
+    1. User clicks "Connect GitHub"
+    2. Gateway /github/oauth/url returns GitHub OAuth URL
+    3. User authorises → GitHub redirects with ?code=...
+    4. Frontend POSTs code to gateway /github/oauth/callback
+    5. Gateway exchanges code for access_token, stores in users/{uid}
+    6. Gateway enqueues Cloud Task → github-reader-service /read
+    7. Reader calls GitHub API, Gemini selects/summarizes repos
+    8. Reader writes github_projects.json to GCS, updates Firestore
 
+  RESUME TAILORING
+    1. User pastes job description → POSTs to gateway /resume/tailor
+    2. Gateway creates drafts/{draftId} in Firestore (status=processing)
+    3. Gateway enqueues Cloud Task → generative-ai-service /tasks/generate
+    4. Frontend subscribes to onSnapshot on drafts/{draftId}
+    5. Gen-AI service detects intent (new / tweak / projects / revamp):
+         new/revamp  → fetch resume.json + github_projects.json from GCS
+                     → select relevant GitHub projects via Gemini
+                     → scrape selected READMEs
+                     → call Gemini to generate full LaTeX resume
+         tweak       → fetch existing .tex from GCS
+                     → call Gemini to surgically edit only changed sections
+         projects    → fetch .tex + github_projects.json
+                     → re-select/scrape projects
+                     → call Gemini to edit projects section
+    6. Service runs tectonic to compile .tex → .pdf
+    7. Uploads .tex + .pdf to GCS rendered_resume/{userId}/{draftId}.*
+    8. Updates drafts/{draftId} status=completed in Firestore
+    9. Frontend onSnapshot fires → loads .tex content → renders in ResumeRenderer
 
-────────────────────────────────────────────────────────────────────────────────
-5. PERFORMANCE BOTTLENECKS
-────────────────────────────────────────────────────────────────────────────────
-
-[PERF-1] No pagination on draft list (api-gateway)
-  File: api-gateway-service/src/controllers/tailoredList.js:8-11
-  .collection("drafts").where("userId","==",userId).get() — no limit.
-  A power user with 500 drafts fetches all 500 on every dashboard load.
-  Fix: Add .orderBy("createdAt","desc").limit(20) and implement cursor pagination.
-  Also create a Firestore composite index on (userId, createdAt desc).
-
-[PERF-2] Full subcollection read to count jobs (generative-ai-service)
-  File: generative-ai-service/app/routes.py:36-38
-  Every incoming task reads all job documents under the draft to count them.
-  Fix: Use a counter field on the draft doc updated with FieldValue.increment(1)
-  when a job is created, and FieldValue.increment(-1) if job is deleted.
-
-[PERF-4] Sequential Gemini calls in github-reader-service
-  File: github-reader-service/routes.py:57-64
-  Up to 20 README summarizations run sequentially — primary latency source for
-  GitHub connect flow. Each Gemini call is ~1-3s; worst case 60s total.
-  Fix: Use asyncio.gather or concurrent.futures.ThreadPoolExecutor to run
-  summarization calls in parallel (respect Gemini rate limits).
-
-[PERF-6] No GCS lifecycle rules
-  File: infra/modules/storage/main.tf
-  Old rendered HTML and parsed JSON files accumulate indefinitely.
-  Fix: Add lifecycle rule to delete non-current versions after 30 days and
-  delete rendered resumes for deleted drafts via the resumeDelete controller
-  (check if it also deletes GCS objects — currently unclear).
-
-
-────────────────────────────────────────────────────────────────────────────────
-6. MISSING BEST PRACTICES
-────────────────────────────────────────────────────────────────────────────────
-
-[BP-1] Zero tests across the entire codebase
-  No unit, integration, or e2e tests in any service. CI/CD is a shell script.
-  Fix (long-term): Add pytest for Python services (mock Firestore/GCS with
-  google-cloud-testutils). Add Jest + React Testing Library for frontend.
-  Add supertest for Node.js services. Prioritize the AI prompt pipeline and
-  billing/rate-limit logic as highest value test targets.
-
-[BP-2] Firestore security rules not defined in Terraform
-  The frontend uses the Firebase SDK to read drafts/{draftId} directly. If the
-  Firestore default rules allow unauthenticated access, any user can read any
-  draft. Rules should enforce: allow read if request.auth.uid == resource.data.userId.
-  Fix: Add a firestore.rules file to the repo and deploy it via the Firebase CLI
-  or a Terraform resource.
-
-[BP-5] Stripe integration is a stub
-  File: frontend-service/src/lib/stripe.ts
-  All Stripe functions return { success: true } after a fake setTimeout. The
-  backend billing routes are implemented with real Stripe SDK calls but the
-  frontend never calls them. Users cannot actually subscribe.
-  Fix: Wire frontend Stripe calls to the gateway /billing/checkout and
-  /billing/portal routes. Add STRIPE_SECRET_KEY, STRIPE_PRICE_ID, and
-  STRIPE_WEBHOOK_SECRET to the required env validation in api-gateway/index.js.
-
-[BP-7] No request correlation IDs across async task chain
-  When a tailor fails, there's no trace ID linking the gateway log entry →
-  Cloud Tasks dispatch → AI service log → Firestore write.
-  Fix: Generate a request_id at the gateway and pass it as a Cloud Tasks header
-  (X-Request-Id). Each downstream service logs it. This enables log correlation
-  in Cloud Logging.
-
-[BP-10] No input length validation on company/role PATCH
-  File: api-gateway-service/src/controllers/resumeTailorUpdate.js
-  Arbitrary-length strings written to Firestore.
-  Fix: Add express-validator or manual checks: company max 200 chars, role max 200.
-
-[BP-STARTUP] RESUME_PARSER_TASKS_QUEUE not set in Terraform but listed in REQUIRED_ENV
-  File: api-gateway-service/src/index.js:21 vs infra/modules/api-gateway-service/main.tf
-  The gateway validates RESUME_PARSER_TASKS_QUEUE at startup but the Terraform
-  module only sets CLOUD_TASKS_QUEUE and GITHUB_READER_TASKS_QUEUE. This would
-  cause the container to refuse to start in production.
-  Fix: Add RESUME_PARSER_TASKS_QUEUE to the Cloud Run env var block in Terraform.
+  DOWNLOAD
+    1. User clicks Download
+    2. Frontend calls gateway /billing/record-download (usage tracking)
+    3. Gateway returns signed GCS URL for the compiled PDF
+    4. Browser opens PDF directly
 
 
 ────────────────────────────────────────────────────────────────────────────────
-7. PRIORITIZED FIX LIST
+5. INTER-SERVICE AUTHENTICATION
 ────────────────────────────────────────────────────────────────────────────────
 
-=== IMMEDIATE (before next deploy) ===
-
-P0-1  Rotate ALL credentials in terraform.tfvars and .env
-      Add both files to .gitignore. Verify neither file is in git history.
-      If they are, rotate credentials AND rewrite git history (git filter-repo).
-
-P0-2  Fix renderer.py to re-raise on failure (EH-7)
-      Currently marks drafts 'completed' with no HTML written. One-line fix.
-
-P0-3  Add RESUME_PARSER_TASKS_QUEUE to Terraform env vars (BP-STARTUP)
-      Without this the gateway won't start.
-
-=== HIGH PRIORITY (this sprint) ===
-
-P1-1  Add DOMPurify sanitization before dangerouslySetInnerHTML (SEC-3)
-      npm install dompurify @types/dompurify
-      import DOMPurify from 'dompurify'; html = DOMPurify.sanitize(rawHtml)
-
-P1-2  Add GitHub OAuth state parameter (SEC-4)
-      Generate random state, store in Redis/session with userId, validate on callback.
-
-P1-3  Add user-visible error messages for all silent catch blocks (EH-1, EH-2, EH-3, EH-5)
-      Dashboard.tsx: add toast/banner system. Minimum: uploadError, tailorError,
-      githubError, snapshotError state vars rendered in the UI.
-
-P1-4  Fix Firestore onSnapshot error callback (EH-5)
-      Replace () => {} with handler that sets local draft status to 'failed' and
-      shows a reconnect prompt.
-
-P1-5  Add multer file size limit (SEC-7)
-      multer({ storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
-      Add 10MB check on frontend before calling upload.
-
-P1-6  Uncomment rate limiting in resumeTailor.js (SEC-8)
-      Verify jd_count field and daily reset logic work, then re-enable.
-      Add 402 error handler in frontend JDInput to show upgrade prompt.
-
-=== MEDIUM PRIORITY (next sprint) ===
-
-P2-1  Add pagination to draft list (PERF-1)
-      .orderBy('createdAt','desc').limit(20) + Firestore composite index.
-
-P2-2  Parallelize GitHub README summarization (PERF-4)
-      ThreadPoolExecutor with max_workers=5, respect Gemini RPM limits.
-
-P2-3  Replace job-count subcollection scan with counter field (PERF-2)
-
-P2-4  Set autoescape=True in Jinja2 (SEC-6)
-
-P2-5  Add try/catch to billing controllers (EH-8, EH-9)
-
-P2-6  Add draft status='failed' handling for tweaks hitting job limit (FAIL-E1)
-      AI service: on 429 from job limit check, write status='failed' with reason.
-      Frontend: show "Tweak limit reached. Start a new brew." message.
-
-P2-7  Add Firestore security rules (BP-2)
-      At minimum: drafts collection read only if request.auth.uid == resource.data.userId
-
-=== LONG-TERM ===
-
-P3-1  Wire real Stripe checkout (BP-5)
-      Replace stubs in stripe.ts with real gateway calls. Add price IDs to env.
-
-P3-2  Add request correlation IDs (BP-7)
-
-P3-3  Add test suite (BP-1)
-      Start with billing/rate-limit logic (highest business risk), then AI pipeline.
-
-P3-4  Add GCS lifecycle rules (PERF-6)
-
-P3-5  Encrypt GitHub access tokens before Firestore write (SEC-5)
+  Browser → Auth Service          Google ID token in JSON body (open endpoint)
+  Browser → API Gateway           Bearer JWT in Authorization header
+  Browser → Firestore (SDK)       Firebase custom token (signInWithCustomToken)
+  Cloud Tasks → backend services  OIDC token (api-gateway-service-sa@... SA)
+                                  Cloud Run validates token automatically
+  Gateway → Secret Manager        Workload Identity (service account IAM role)
+  All backend → GCS               Service account IAM (roles/storage.objectAdmin)
+  All backend → Firestore         Service account IAM (roles/datastore.user)
 
 
 ────────────────────────────────────────────────────────────────────────────────
-8. QUICK WINS vs LONG-TERM FIXES
+6. INFRASTRUCTURE DETAILS
 ────────────────────────────────────────────────────────────────────────────────
 
-QUICK WINS (< 1 day each, high impact):
-  • renderer.py re-raise fix — 1 line change, prevents silent data corruption
-  • Add RESUME_PARSER_TASKS_QUEUE to Terraform — prevents startup failure
-  • Replace () => {} Firestore error callback — 5 lines, prevents infinite spinner
-  • Add multer file size limit — 1 line, prevents OOM DoS
-  • Add DOMPurify — npm install + 1 import + 1 function call
-  • Rotate secrets + update .gitignore — operational, no code change
-  • Uncomment rate limit block in resumeTailor.js — no code change needed
+  GCP Project:      brewai-497502
+  Region:           us-central1
+  Terraform state:  gs://brewai-497502-tf-state/infra
 
-LONG-TERM (requires design work):
-  • GitHub OAuth CSRF state parameter (requires Redis or session store update)
-  • JWT httpOnly cookie (requires auth-service to set cookie, frontend cookie reads
-    to go through a /auth/me endpoint — significant refactor)
-  • Pagination on draft list (requires client-side cursor management)
-  • Test suite (requires test infrastructure setup per service)
-  • Real Stripe wiring (requires complete Stripe webhook + subscription lifecycle)
+  Enabled GCP APIs:
+    Cloud Run, Artifact Registry, Cloud Tasks, Secret Manager,
+    Firestore, Cloud Storage, IAM, Compute Engine, Memorystore (Redis)
+
+  Cloud Run services:
+    auth-service            public ingress, Node.js
+    api-gateway-service     public ingress, Node.js
+    resume-parser-service   internal ingress, Python, 1 CPU / 512Mi
+    github-reader-service   internal ingress, Python
+    generative-ai-service   internal ingress + VPC egress, Python,
+                            1 CPU / 512Mi, 600s timeout
+
+  Cloud Tasks queues (all us-central1):
+    generative-ai-service-generate   10 dispatch/s, 5 concurrent, 3 retries
+    resume-parser tasks queue
+    github-reader tasks queue
+
+  Storage:
+    Main GCS bucket       resumes, github_projects, rendered_resume (.tex + .pdf)
+    Artifacts GCS bucket  compiled PDFs for user download
+
+  Database:
+    Firestore (default, native mode, us-central1)
+    Collections: users, drafts, uploadedResumes, generative-ai-service-jobs,
+                 generative-ai-service-data
+
+  Cache:
+    Redis (Memorystore, BASIC tier, 1GB, Redis 7.0)
+    Used by: generative-ai-service (multi-turn conversation context per draft)
+    Access: via VPC (generative-ai-service-vpc / 10.10.0.0/24)
+
+  Secrets (all in Secret Manager):
+    jwt_secret, google_client_id, github_token, gemini_api_key,
+    github_client_id, github_client_secret, resend_api_key,
+    stripe_secret_key, stripe_webhook_secret, stripe_price_id
+
+  CI/CD:
+    Shell deploy scripts in infra/ — one per service (docker build + push +
+    gcloud run deploy). No automated CI pipeline currently.
+
+
+────────────────────────────────────────────────────────────────────────────────
+7. SECURITY AUDIT — EXPOSED KEYS
+────────────────────────────────────────────────────────────────────────────────
+
+  ⚠ STOP — review this section before open-sourcing. ⚠
+
+  [SEC-CRIT-1]  infra/terraform.tfvars — ALL SECRETS IN PLAINTEXT
+    This file contains live production credentials:
+      jwt_secret           (64-char hex)
+      google_client_id     (OAuth client ID)
+      github_token         (ghp_... — GitHub Personal Access Token)
+      gemini_api_key       (AIzaSy... — Google Gemini API key)
+      github_client_id     (GitHub OAuth app client ID)
+      github_client_secret (GitHub OAuth app secret)
+      resend_api_key       (re_... — Resend transactional email key)
+
+    The root .gitignore lists infra/terraform.tfvars — so it should NOT have
+    been committed. But the file exists on disk and would be pushed by any
+    `git add .` or if .gitignore is misconfigured.
+
+    ACTIONS REQUIRED (before any public push):
+      1. Rotate ALL of the above credentials immediately.
+         The GitHub PAT (ghp_...) and Gemini key are the highest-risk items.
+      2. Run: git -C infra log --all --full-history -- terraform.tfvars
+         If it ever appeared in a commit, purge it with git-filter-repo or BFG
+         Repo Cleaner before making the repo public.
+      3. Replace with infra/terraform.tfvars.example (placeholder values only).
+      4. Add **/*.tfvars to the root .gitignore.
+
+  [SEC-INFO-1]  frontend-service/src/lib/firebase.ts — Firebase Web API Key
+    apiKey: "AIzaSyB3yITI556E2vpKdUuQZxZbyaDSL07ROVk"
+    authDomain: brewai-497502.firebaseapp.com
+    projectId: brewai-497502
+
+    ASSESSMENT: Firebase web API keys are INTENTIONALLY PUBLIC — they identify
+    the Firebase project to the client SDK, not authorize privileged access.
+    This is safe to commit. Security is enforced by Firestore Security Rules
+    and the domain allowlist in the Firebase console, not by keeping this key
+    secret. No action required.
+
+    Ensure your Firestore Security Rules are locked down (see SEC-2 below).
+
+  [SEC-2]  Firestore Security Rules not confirmed
+    The frontend uses the Firebase SDK to read drafts/{draftId} directly
+    (onSnapshot). If default rules allow broad access, any authenticated user
+    can read any other user's drafts.
+    ACTION: Confirm firestore.rules enforces:
+      allow read, write: if request.auth.uid == resource.data.userId;
+
+  [SEC-3]  GitHub OAuth missing state parameter (CSRF)
+    api-gateway-service/src/controllers/githubOAuth.js
+    The OAuth URL is built without a random state value. An attacker can initiate
+    OAuth with their GitHub account, steal the ?code, and replay it against the
+    callback endpoint with a victim's JWT — linking their GitHub to the victim's
+    account.
+    ACTION: Generate a cryptographic state token, store in Redis with userId,
+    validate on callback before exchanging the code.
+
+  [SEC-4]  GitHub access token stored plaintext in Firestore
+    users/{userId}.github_access_token holds the raw OAuth token.
+    ACTION: Encrypt before storing, or accept the risk given Firestore IAM rules.
+
+
+────────────────────────────────────────────────────────────────────────────────
+8. PRE-OPEN-SOURCE CHECKLIST
+────────────────────────────────────────────────────────────────────────────────
+
+  Before publishing to GitHub:
+
+  [ ] Rotate ALL secrets in terraform.tfvars (GitHub PAT, Gemini key, Resend,
+      GitHub OAuth secret, JWT secret).
+  [ ] Audit git history of every submodule for committed secrets:
+        git log --all --full-history -- terraform.tfvars
+        git log --all --full-history -- .env
+  [ ] If secrets were ever committed: rewrite history with git-filter-repo,
+      then rotate all credentials again.
+  [ ] Replace terraform.tfvars with terraform.tfvars.example (placeholders).
+  [ ] Add **/*.tfvars and **/.env to root .gitignore.
+  [ ] Review and scrub meta-data/ — contains commands.txt, migration scripts,
+      and trash.txt (may contain internal notes or credentials).
+  [ ] Review admin-monitor/ — local monitoring tool, already in .gitignore;
+      confirm it contains no hardcoded credentials.
+  [ ] Confirm Firestore Security Rules are restrictive before exposing the
+      project and its Firebase project ID publicly.
+  [ ] Add LICENSE file (e.g., MIT or Apache 2.0).
+  [ ] Add root README.md with project overview, setup instructions, required
+      GCP/Firebase project, and how to supply secrets.
+  [ ] Add CONTRIBUTING.md.
+  [ ] Add .env.example files to each service listing required env vars
+      (without values).
+  [ ] Confirm Stripe keys (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+      STRIPE_PRICE_ID) are only in Secret Manager / Cloud Run env vars
+      and do not appear in any committed file.
+
 
 ================================================================================
-END OF AUDIT
+END OF REPORT
 ================================================================================

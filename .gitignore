@@ -20,3 +20,10 @@ scripts
 meta-data
 
 admin-monitor
+**/*.tfvars
+**/*.tfstate
+**/*.tfstate.backup
+**/terraform.tfstate*
+
+.claude
+CONTRIBUTING.md
