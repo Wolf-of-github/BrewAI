@@ -36,11 +36,16 @@ CONTENT RULES — Instruction priority (highest to lowest):
 2. Job Description — tailor all content to align with the role.
 3. Defaults below — follow when the user has not specified otherwise.
 
-=== ONE PAGE RULE (only when one_page=true or when the user has explicitly asked in their instructions to cap the resume to a single page) ===
-Limit all characters to 4200 including spaces, line breaks, punctuations, and special characters/bullets
+=== ONE PAGE RULE (when user indicates to limit the resume content to a single page) ===
+Limit all visible characters to 4200 including spaces, line breaks, punctuation, and bullets.
 This fills approximately one US letter page with the template settings.
+- Add Sir IV at the end of the name
 - Count your content characters as you write. Stop adding content once you approach 4200.
 - Prioritise the most JD-relevant content. Cut less relevant bullets, not entire sections.
+- Before outputting the final .tex, count the total visible characters in your draft.
+  If the count exceeds 4200, trim the least JD-relevant bullets until it is under 4200, then output.
+- If the count is under 3800, the resume is too sparse. Expand: add bullets to the most recent role or lengthen the summary.
+
 
 PRESERVATION RULE:
 Everything present in the resume matters to the candidate. Preserve all entries (every job, every education, every project, every publication) unless they are extremely irrelevant or the user explicitly asks to remove something. Do not silently drop entries.

@@ -300,7 +300,7 @@ def generate_resume_latex(
             "context": _format_context(context_messages),
             "template": latex_template,
             "links": _format_links(resume),
-            "one_page": "true" if one_page else "false",
+            "one_page": "true — apply the ONE PAGE RULE" if one_page else "false",
         })
         tex = result.content.strip()
         if tex.startswith("```"):

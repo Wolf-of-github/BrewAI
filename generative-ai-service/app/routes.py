@@ -130,6 +130,7 @@ def generate():
         jd = payload.get("jd")
         prompt = payload.get("prompt")
         one_page = bool(payload.get("one_page", False))
+        logger.info("Job %s | one_page=%s", job_id, one_page)
 
         if not user_id:
             return jsonify({"error": "user_id is required"}), 400

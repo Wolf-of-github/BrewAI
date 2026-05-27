@@ -794,7 +794,7 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
       </div>
 
       {/* Content */}
-      <div id='content-board' className="flex-1 overflow-y-auto">
+      <div id='content-board' className="flex-1 overflow-hidden">
         {loading && (
           <div className="flex items-center justify-center h-full py-20">
             <Sparkles className="w-6 h-6 animate-pulse" style={{ color: 'var(--accent)' }} />
@@ -812,7 +812,7 @@ function ResumeViewer({ jd, userEmail }: { jd: JDEntry | null; userEmail: string
             <BrewCountdown />
           </div>
         )}
-        {pdfUrl && <iframe src={pdfUrl} className="w-full border-0" style={{ height: '150vw', minHeight: '900px' }} title="Resume Preview" />}
+        {pdfUrl && <iframe src={pdfUrl} className="w-full h-full border-0" title="Resume Preview" />}
       </div>
     </div>
   )
@@ -824,14 +824,14 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
   const [instructions, setInstructions] = useState('')
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  // const [onePage, setOnePage] = useState(false)
+  const [onePage, setOnePage] = useState(false)
 
   async function submit() {
     if (!text.trim() || submitting) return
     const jdText = text.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/\s+/g, ' ').trim()
     setSubmitting(true)
     try {
-      const { draft_id, company, role } = await apiTailorResume(jdText, instructions.trim(), undefined)
+      const { draft_id, company, role } = await apiTailorResume(jdText, instructions.trim(), undefined, onePage || undefined)
       onSubmit({
         id: draft_id,
         company,
@@ -929,7 +929,6 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
         }}
       />
 
-      {/* One-page toggle hidden for now
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Fit to one page</span>
         <button
@@ -945,7 +944,6 @@ function JDInput({ onSubmit, disabled }: { onSubmit: (jd: JDEntry) => void; disa
           />
         </button>
       </div>
-      */}
 
       <button
         onClick={submit}
@@ -1535,12 +1533,12 @@ export default function Dashboard({
   )
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+    <div className="h-screen overflow-hidden flex flex-col" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
       <ToastContainer />
       <DashboardNavbar user={user} onSignOut={onSignOut ?? (() => {})} onProfile={onProfile ?? (() => {})} onHome={onHome ?? (() => {})} />
 
       {/* ── Desktop layout (sm+) ──────────────────────────────── */}
-      <div className="hidden sm:flex flex-1 max-w-350 w-full mx-auto px-4 sm:px-6 py-6 gap-5">
+      <div className="hidden sm:flex flex-1 min-h-0 max-w-350 w-full mx-auto px-4 sm:px-6 py-6 gap-5">
 
         {/* Left sidebar */}
         {!tweakCollapsed ? (
@@ -1559,7 +1557,7 @@ export default function Dashboard({
             <Clock className="w-4 h-4 shrink-0" />
           </aside>
         ) : (
-          <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4">
+          <aside id="left-sidebar" className="w-72 shrink-0 flex flex-col gap-4 overflow-y-auto">
             {sidebarContent}
           </aside>
         )}
@@ -1570,7 +1568,7 @@ export default function Dashboard({
         </main>
 
         {/* Right: Tweak panel + Suggestions */}
-        <div className={`hidden sm:flex flex-col shrink-0 sticky top-20 self-start gap-3 ${tweakCollapsed ? '' : 'w-72'}`}>
+        <div className={`hidden sm:flex flex-col shrink-0 overflow-y-auto gap-3 ${tweakCollapsed ? '' : 'w-72'}`}>
           {activeJD && (
             <TweakPanel
               jd={activeJD}
