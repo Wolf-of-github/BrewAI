@@ -1,13 +1,10 @@
-data
-commands.txt
-help.txt
-
-# Terraform — never commit secrets or local state
-infra/terraform.tfvars
-infra/.terraform/
-infra/*.tfstate
-infra/*.tfstate.backup
-infra/.terraform.lock.hcl
+# Secrets and Terraform state — never commit
+**/*.tfvars
+**/*.tfstate
+**/*.tfstate.backup
+**/terraform.tfstate*
+**/.terraform/
+**/.terraform.lock.hcl
 
 # Dependency directories
 node_modules/
@@ -15,15 +12,17 @@ node_modules/
 # Python virtual environments
 .venv/
 venv/
+
+# Local / OS
 .DS_Store
+data
+commands.txt
+help.txt
+
+# Internal tools — not part of open source release
 scripts
 meta-data
-
 admin-monitor
-**/*.tfvars
-**/*.tfstate
-**/*.tfstate.backup
-**/terraform.tfstate*
 
+# IDE / tooling
 .claude
-CONTRIBUTING.md

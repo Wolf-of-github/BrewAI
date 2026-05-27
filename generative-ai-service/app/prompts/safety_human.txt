@@ -1,0 +1,5 @@
+Job Description:
+{jd}
+
+User Instruction:
+{user_prompt}

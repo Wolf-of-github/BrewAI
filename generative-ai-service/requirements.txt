@@ -1,0 +1,10 @@
+flask==3.1.0
+gunicorn==23.0.0
+redis==5.2.1
+google-cloud-firestore==2.19.0
+google-cloud-storage==2.19.0
+google-cloud-secret-manager==2.20.0
+requests==2.32.3
+langchain==0.3.24
+langchain-community==0.3.23
+langchain-google-genai==2.1.2

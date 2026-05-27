@@ -1,0 +1,101 @@
+\documentclass[9pt,letterpaper]{article}
+
+\usepackage[letterpaper, margin=0.3in]{geometry}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{multicol}
+\usepackage{multirow}
+\usepackage[unicode, draft=false]{hyperref}
+\usepackage[utf8]{inputenc}
+\usepackage{supertabular}
+
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newlength{\fullcollw}
+\setlength{\fullcollw}{0.47\textwidth}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}[\titlerule]
+\titlespacing*{\section}{0pt}{6pt}{4pt}
+
+\definecolor{linkcolour}{rgb}{0,0.2,0.6}
+\hypersetup{colorlinks,breaklinks,urlcolor=linkcolour,linkcolor=linkcolour,pdfnewwindow=true}
+
+\setlist{noitemsep, topsep=2pt, parsep=0pt, partopsep=0pt, leftmargin=15pt}
+\setlength{\parskip}{0pt}
+\setlength{\parsep}{0pt}
+
+\begin{document}
+
+\pagestyle{empty}
+
+% ── Header ────────────────────────────────────────────────────────────────────
+\noindent
+{\LARGE \textbf{CANDIDATE NAME}} \hfill \href{mailto:EMAIL}{EMAIL} $|$ \href{tel:PHONE}{PHONE} $|$ \href{PORTFOLIO_URL}{Portfolio} $|$ \href{LINKEDIN_URL}{LinkedIn}
+
+% ── Professional Summary ──────────────────────────────────────────────────────
+\section*{Professional Summary}
+One sentence tailored to the role, grounded in the candidate's background.
+
+% ── Skills ────────────────────────────────────────────────────────────────────
+\section*{Skills}
+Domain A: skill1, skill2, skill3 | Domain B: skill4, skill5 | Domain C: skill6, skill7
+
+% ── Work Experience ───────────────────────────────────────────────────────────
+\section*{Work Experience}
+\noindent
+\textbf{Company Name, City, Country} \hfill \textbf{Mon YYYY - Mon YYYY} \\
+\textit{Job Title} \hfill \textit{City, Country}
+\vspace{-2pt}
+\begin{itemize}
+    \item Bullet point describing an achievement or responsibility, outcome-oriented and tailored to the JD.
+\end{itemize}
+
+% ── Education ─────────────────────────────────────────────────────────────────
+\section*{Education}
+\noindent
+\textbf{University Name, School Name} \hfill City, Country \\
+Degree in Field of Study \hfill Mon YYYY - Mon YYYY \\
+GPA: X.XX/4.00 $|$ Coursework: Course A, Course B, Course C, Course D \\
+\vspace{4pt}
+
+\noindent
+\textbf{University Name} \hfill City, Country \\
+Degree in Field of Study \hfill Mon YYYY - Mon YYYY \\
+GPA: X.XX/4.00 $|$ Coursework: Course A, Course B, Course C \\
+
+% ── Professional Projects ─────────────────────────────────────────────────────
+\section*{Professional Projects}
+\noindent
+\textbf{Project Name}
+\begin{itemize}
+    \item Bullet point describing a technical achievement, outcome-oriented and tailored to the JD.
+\end{itemize}
+
+% ── Publications ─────────────────────────────────────────────────────────────
+% Include this section only if the candidate has publications.
+% One skeleton entry shown below — replicate for each publication.
+% Omit any field that is not available (e.g. no URL → omit \href, no venue → omit \textit{}).
+% Bold the candidate's name in the author list.
+% Append status notes inline: (submitted), (under review), -- Received Best Paper Award, etc.
+\section*{Publications}
+\noindent\hangindent=1em [AUTHORS (bold candidate name)], ``[\href{PAPER_URL_IF_EXISTS}{TITLE}]'', [\textit{VENUE\_IF\_EXISTS}][, YEAR\_IF\_EXISTS][STATUS\_NOTE\_IF\_EXISTS]
+\vspace{3pt}
+
+\noindent\hangindent=1em [AUTHORS], ``[TITLE (no URL)]'', [\textit{VENUE\_IF\_EXISTS}][, YEAR\_IF\_EXISTS][STATUS\_NOTE\_IF\_EXISTS]
+
+% ── Certifications ────────────────────────────────────────────────────────────
+% Include this section only if the candidate has certifications.
+\section*{Certifications}
+\begin{itemize}
+    \item \textbf{Certification Name} -- Issuing Body; brief description of what it validates
+\end{itemize}
+
+% ── Achievements ─────────────────────────────────────────────────────────────
+% Include this section only if the candidate has notable achievements or awards.
+\section*{Achievements}
+\begin{itemize}
+    \item \textbf{Award or Achievement} -- Issuer; Year; brief description
+\end{itemize}
+
+\end{document}

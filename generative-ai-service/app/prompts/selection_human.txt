@@ -1,0 +1,11 @@
+Job Description:
+{jd}
+
+User Instruction:
+{user_prompt}
+
+Available Projects:
+{project_summaries}
+
+Prior Session Context:
+{context}

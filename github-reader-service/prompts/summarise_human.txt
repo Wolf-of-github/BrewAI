@@ -1,0 +1,4 @@
+Repository Name: {repo_name}
+
+README:
+{readme_text}

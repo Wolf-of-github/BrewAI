@@ -1,0 +1,14 @@
+User Instruction:
+{user_prompt}
+
+Job Description:
+{jd}
+
+GitHub Project READMEs:
+{readmes}
+
+Prior Session Context:
+{context}
+
+Resume LaTeX Source:
+{tex}

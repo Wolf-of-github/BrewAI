@@ -1,0 +1,4 @@
+Job description:
+{jd}
+
+Return JSON: {{"company": "...", "role": "..."}}

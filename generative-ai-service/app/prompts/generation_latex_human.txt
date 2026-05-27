@@ -1,0 +1,26 @@
+Resume:
+{resume}
+
+Job Description:
+{jd}
+
+GitHub Project READMEs:
+{readmes}
+
+Prior Tailored Resume (.tex):
+{rendered_tex}
+
+User Instruction:
+{user_prompt}
+
+Prior Session Context:
+{context}
+
+Candidate Hyperlinks (from original resume):
+{links}
+
+One Page Mode:
+{one_page}
+
+LaTeX Template (use as structural and stylistic reference):
+{template}
